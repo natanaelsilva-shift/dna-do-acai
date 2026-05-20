@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
   type ReactNode,
@@ -20,6 +21,10 @@ import {
   type Product,
   withCatalogProductImages,
 } from "@/data/menu";
+import {
+  createClient,
+  isSupabaseConfigured,
+} from "@/lib/supabase/client";
 import {
   ORDER_STATUSES,
   WHATSAPP_BUSINESS_PHONE_NUMBER,
@@ -138,6 +143,16 @@ export function AdminDashboard({
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState("");
   const [status, setStatus] = useState("Catálogo carregado para edição.");
+  const [soundEnabled, setSoundEnabled] = useState(false);
+  const [soundError, setSoundError] = useState("");
+  const [notification, setNotification] = useState<{
+    order: OrderRecord;
+    visible: boolean;
+  } | null>(null);
+  const [highlightedOrderId, setHighlightedOrderId] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const latestOrdersRef = useRef<OrderRecord[]>(initialOrders);
+  const firstLoadRef = useRef(true);
 
   const selectedProduct =
     catalog.products.find((product) => product.id === selectedProductId) ??
@@ -169,60 +184,192 @@ export function AdminDashboard({
     [catalog, orders.length],
   );
 
-  const loadOrders = useCallback(async ({ silent = false } = {}) => {
-    if (!silent) {
-      setOrdersLoading(true);
+  const newOrdersCount = useMemo(
+    () => orders.filter((order) => order.status === "Novo").length,
+    [orders],
+  );
+
+  useEffect(() => {
+    latestOrdersRef.current = orders;
+  }, [orders]);
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem("dna-admin-order-sound-enabled");
+    setSoundEnabled(saved === "true");
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      "dna-admin-order-sound-enabled",
+      soundEnabled ? "true" : "false",
+    );
+  }, [soundEnabled]);
+
+  const playNotificationSound = useCallback(async () => {
+    if (!soundEnabled || !audioRef.current) {
+      return;
     }
-    setOrdersError("");
 
     try {
-      const response = await fetch("/api/orders", { cache: "no-store" });
-      const body = (await response.json()) as {
-        orders?: OrderRecord[];
-        error?: string;
-      };
-
-      if (!response.ok) {
-        throw new Error(body.error ?? "Não foi possível carregar os pedidos.");
-      }
-
-      const nextOrders = body.orders ?? [];
-
-      setOrders(nextOrders);
-      setOrdersError("");
-      setStatus(
-        nextOrders.length > 0
-          ? `${nextOrders.length} pedido${nextOrders.length === 1 ? "" : "s"} carregado${nextOrders.length === 1 ? "" : "s"}.`
-          : "Nenhum pedido recebido ainda.",
+      await audioRef.current.play();
+      setSoundError("");
+    } catch {
+      setSoundError(
+        "Toque no botão 'Ativar som de pedidos' para liberar notificações sonoras.",
       );
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Não foi possível carregar os pedidos.";
-
-      setOrdersError(message);
-      setStatus(message);
-    } finally {
-      if (!silent) {
-        setOrdersLoading(false);
-      }
     }
-  }, []);
+  }, [soundEnabled]);
+
+  const showNewOrder = useCallback(
+    (order: OrderRecord) => {
+      if (order.status !== "Novo") {
+        return;
+      }
+
+      setOrders((currentOrders) => {
+        const hasOrder = currentOrders.some((existingOrder) => existingOrder.id === order.id);
+        return hasOrder ? currentOrders : [order, ...currentOrders];
+      });
+      latestOrdersRef.current = [order, ...latestOrdersRef.current];
+      setHighlightedOrderId(order.id);
+      setNotification({ order, visible: true });
+      setStatus(`Novo pedido recebido! ${formatOrderNumber(order.order_number)}.`);
+      void playNotificationSound();
+    },
+    [playNotificationSound],
+  );
+
+  const loadOrders = useCallback(
+    async ({ silent = false } = {}) => {
+      if (!silent) {
+        setOrdersLoading(true);
+      }
+      setOrdersError("");
+
+      try {
+        const response = await fetch("/api/orders", { cache: "no-store" });
+        const body = (await response.json()) as {
+          orders?: OrderRecord[];
+          error?: string;
+        };
+
+        if (!response.ok) {
+          throw new Error(body.error ?? "Não foi possível carregar os pedidos.");
+        }
+
+        const nextOrders = body.orders ?? [];
+
+        if (!firstLoadRef.current) {
+          const currentIds = new Set(latestOrdersRef.current.map((order) => order.id));
+          const newOrders = nextOrders.filter((order) => !currentIds.has(order.id));
+
+          if (newOrders.length > 0) {
+            showNewOrder(newOrders[0]);
+          }
+        }
+
+        setOrders(nextOrders);
+        latestOrdersRef.current = nextOrders;
+        firstLoadRef.current = false;
+        setOrdersError("");
+        setStatus(
+          nextOrders.length > 0
+            ? `${nextOrders.length} pedido${nextOrders.length === 1 ? "" : "s"} carregado${nextOrders.length === 1 ? "" : "s"}.`
+            : "Nenhum pedido recebido ainda.",
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Não foi possível carregar os pedidos.";
+
+        setOrdersError(message);
+        setStatus(message);
+      } finally {
+        if (!silent) {
+          setOrdersLoading(false);
+        }
+      }
+    },
+    [showNewOrder],
+  );
 
   useEffect(() => {
     if (activeTab !== "orders") {
       return;
     }
 
-    const refreshTimeoutId = window.setTimeout(() => {
-      void loadOrders({ silent: true });
-    }, 0);
-    const intervalId = window.setInterval(() => {
-      void loadOrders({ silent: true });
-    }, 5000);
+    let pollingInterval: number | undefined;
+    let supabaseChannel: ReturnType<ReturnType<typeof createClient>["channel"]> | null = null;
+    let isMounted = true;
+
+    async function setupRealtime() {
+      if (!isSupabaseConfigured()) {
+        pollingInterval = window.setInterval(() => {
+          void loadOrders({ silent: true });
+        }, 5000);
+        return;
+      }
+
+      try {
+        const supabase = createClient();
+        const channel = supabase
+          .channel("orders-listener")
+          .on(
+            "postgres_changes",
+            { event: "INSERT", schema: "public", table: "orders" },
+            (payload) => {
+              const newOrder = payload.new as OrderRecord | null;
+
+              if (!newOrder ||
+                latestOrdersRef.current.some((order) => order.id === newOrder.id)) {
+                return;
+              }
+
+              if (isMounted) {
+                showNewOrder(newOrder);
+              }
+            },
+          )
+          .on(
+            "postgres_changes",
+            { event: "UPDATE", schema: "public", table: "orders" },
+            (payload) => {
+              const updatedOrder = payload.new as OrderRecord | null;
+              if (!updatedOrder) {
+                return;
+              }
+
+              setOrders((currentOrders) =>
+                currentOrders.map((order) =>
+                  order.id === updatedOrder.id ? updatedOrder : order,
+                ),
+              );
+              latestOrdersRef.current = latestOrdersRef.current.map((order) =>
+                order.id === updatedOrder.id ? updatedOrder : order,
+              );
+            },
+          );
+
+        await channel.subscribe();
+        supabaseChannel = channel;
+      } catch {
+        if (!pollingInterval) {
+          pollingInterval = window.setInterval(() => {
+            void loadOrders({ silent: true });
+          }, 5000);
+        }
+      }
+    }
+
+    void setupRealtime();
 
     return () => {
-      window.clearTimeout(refreshTimeoutId);
-      window.clearInterval(intervalId);
+      isMounted = false;
+      if (pollingInterval) {
+        window.clearInterval(pollingInterval);
+      }
+      if (supabaseChannel) {
+        void supabaseChannel.unsubscribe();
+      }
     };
   }, [activeTab, loadOrders]);
 
@@ -598,20 +745,31 @@ export function AdminDashboard({
           </div>
 
           <nav className="grid gap-2 rounded-[8px] border border-[#d7a948]/35 bg-white p-2">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={`min-h-11 px-3 text-left text-sm font-semibold transition ${
-                  activeTab === tab.id
-                    ? "bg-[#103d2c] text-white"
-                    : "text-[#103d2c] hover:bg-[#f3ead2]"
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
+            {tabs.map((tab) => {
+              const badgeCount = tab.id === "orders" ? newOrdersCount : 0;
+
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`min-h-11 px-3 text-left text-sm font-semibold transition ${
+                    activeTab === tab.id
+                      ? "bg-[#103d2c] text-white"
+                      : "text-[#103d2c] hover:bg-[#f3ead2]"
+                  }`}
+                >
+                  <span className="flex items-center justify-between gap-2">
+                    <span>{tab.label}</span>
+                    {badgeCount > 0 ? (
+                      <span className="rounded-full bg-[#d7a948] px-2 py-0.5 text-xs font-semibold text-[#103d2c]">
+                        {badgeCount}
+                      </span>
+                    ) : null}
+                  </span>
+                </button>
+              );
+            })}
           </nav>
         </aside>
 
@@ -624,6 +782,23 @@ export function AdminDashboard({
               onRefresh={loadOrders}
               onUpdateStatus={updateOrderStatus}
               onUpdateDeliveryFee={updateOrderDeliveryFee}
+              onEnableSound={() => setSoundEnabled(true)}
+              onTestSound={async () => {
+                if (!audioRef.current) {
+                  return;
+                }
+
+                try {
+                  await audioRef.current.play();
+                  setSoundEnabled(true);
+                  setSoundError("");
+                } catch {
+                  setSoundError(
+                    "Toque no botão 'Ativar som de pedidos' para liberar o áudio.",
+                  );
+                }
+              }}
+              soundError={soundError}
             />
           ) : null}
 
@@ -672,9 +847,71 @@ export function AdminDashboard({
             />
           ) : null}
         </section>
+        <audio ref={audioRef} src="/sounds/novo-pedido.wav" preload="auto" />
+        {notification?.visible ? <NotificationToast /> : null}
       </div>
     </main>
   );
+
+  function NotificationToast() {
+    if (!notification?.visible) {
+      return null;
+    }
+
+    const newestOrder = notification.order;
+
+    return (
+      <div className="fixed right-4 top-4 z-50 w-[min(26rem,calc(100vw-2rem)))] rounded-[16px] border border-[#d7a948]/40 bg-white p-4 shadow-[0_20px_60px_rgba(16,61,44,0.16)]">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#d97706]">
+              Novo pedido recebido!
+            </p>
+            <p className="mt-2 text-sm font-semibold text-[#103d2c]">
+              {formatOrderNumber(newestOrder.order_number)} • {newestOrder.customer_name}
+            </p>
+            <p className="mt-1 text-sm leading-6 text-[#526354]">
+              {formatDateTime(newestOrder.created_at)}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setNotification(null)}
+            className="text-sm font-semibold text-[#4b164c] transition hover:text-[#103d2c]"
+          >
+            Fechar
+          </button>
+        </div>
+
+        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab("orders");
+              setHighlightedOrderId(newestOrder.id);
+              const element = document.getElementById(`order-${newestOrder.id}`);
+              if (element) {
+                element.scrollIntoView({ behavior: "smooth", block: "center" });
+              }
+            }}
+            className="min-h-10 rounded-[8px] border border-[#103d2c] bg-[#103d2c] px-4 text-sm font-semibold text-white transition hover:bg-[#d7a948] hover:text-[#103d2c]"
+          >
+            Ver pedido
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              updateOrderStatus(newestOrder.id, "Em preparo");
+              setNotification(null);
+            }}
+            className="min-h-10 rounded-[8px] border border-[#d7a948] bg-[#d7a948] px-4 text-sm font-semibold text-[#103d2c] transition hover:bg-[#f1cf77]"
+          >
+            Marcar como em preparo
+          </button>
+        </div>
+      </div>
+    );
+  }
 }
 
 function OrdersPanel({
@@ -684,6 +921,9 @@ function OrdersPanel({
   onRefresh,
   onUpdateStatus,
   onUpdateDeliveryFee,
+  onEnableSound,
+  onTestSound,
+  soundError,
 }: {
   error: string;
   loading: boolean;
@@ -691,21 +931,45 @@ function OrdersPanel({
   onRefresh: () => void | Promise<void>;
   onUpdateStatus: (orderId: string, status: OrderStatus) => void | Promise<void>;
   onUpdateDeliveryFee: (orderId: string, deliveryFee: number) => void | Promise<void>;
+  onEnableSound: () => void;
+  onTestSound: () => void;
+  soundError: string;
 }) {
   return (
     <PanelShell
       title="Pedidos"
       action={
-        <button
-          type="button"
-          onClick={() => void onRefresh()}
-          className="min-h-10 border border-[#103d2c] bg-[#103d2c] px-4 text-sm font-semibold text-white transition hover:border-[#d7a948] hover:bg-[#d7a948] hover:text-[#103d2c]"
-        >
-          Atualizar
-        </button>
+        <div className="grid gap-2 sm:flex sm:items-center">
+          <button
+            type="button"
+            onClick={() => void onRefresh()}
+            className="min-h-10 border border-[#103d2c] bg-[#103d2c] px-4 text-sm font-semibold text-white transition hover:border-[#d7a948] hover:bg-[#d7a948] hover:text-[#103d2c]"
+          >
+            Atualizar
+          </button>
+          <button
+            type="button"
+            onClick={onEnableSound}
+            className="min-h-10 border border-[#d7a948] bg-[#d7a948] px-4 text-sm font-semibold text-[#103d2c] transition hover:bg-[#f1cf77]"
+          >
+            Ativar som de pedidos
+          </button>
+          <button
+            type="button"
+            onClick={onTestSound}
+            className="min-h-10 border border-[#103d2c] bg-white px-4 text-sm font-semibold text-[#103d2c] transition hover:bg-[#f3ead2]"
+          >
+            Testar som
+          </button>
+        </div>
       }
     >
       <div className="grid gap-4">
+        {soundError ? (
+          <div className="rounded-[8px] border border-[#f8b4b4] bg-[#fff1f2] p-4 text-sm text-[#9f1239]">
+            {soundError}
+          </div>
+        ) : null}
         <div className="rounded-[8px] border border-[#d7a948]/30 bg-[#fffaf0] p-4">
           <p className="text-sm font-semibold text-[#103d2c]">
             WhatsApp Business Cloud API

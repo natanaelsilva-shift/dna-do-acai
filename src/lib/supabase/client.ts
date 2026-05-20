@@ -12,6 +12,10 @@ function getSupabaseKey() {
   );
 }
 
+export function isSupabaseConfigured() {
+  return Boolean(getSupabaseUrl() && getSupabaseKey());
+}
+
 export function createClient() {
   return createBrowserClient(getSupabaseUrl(), getSupabaseKey());
 }
