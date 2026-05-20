@@ -1,5 +1,3 @@
-export const ORDER_DELIVERY_FEE = 600;
-
 export const WHATSAPP_BUSINESS_PHONE_NUMBER = "5562991102715";
 
 export const ORDER_STATUSES = [
@@ -45,7 +43,7 @@ export type CreateOrderPayload = {
   notes: string;
   items: OrderItem[];
   subtotal: number;
-  deliveryFee: number;
+  deliveryFee: number | null;
   total: number;
 };
 
@@ -61,7 +59,7 @@ export type OrderRecord = {
   neighborhood: string | null;
   items: OrderItem[];
   subtotal: number;
-  delivery_fee: number;
+  delivery_fee: number | null;
   total: number;
   payment_method: PaymentMethod;
   payment_label: string;

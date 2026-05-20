@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState, useSyncExternalStore } from "react";
+import Image from "next/image";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import {
   CATALOG_STORAGE_KEY,
   initialCatalog,
@@ -9,9 +10,9 @@ import {
   type ComplementGroup,
   type ComplementOption,
   type Product,
+  withCatalogProductImages,
 } from "@/data/menu";
 import {
-  ORDER_DELIVERY_FEE,
   type CreateOrderPayload,
   type DeliveryMethod,
   type OrderCustomizationLine,
@@ -24,6 +25,8 @@ type CartItem = {
   id: string;
   productId: string;
   name: string;
+  image: string;
+  imagePosition: string;
   quantity: number;
   unitPrice: number;
   customization?: OrderCustomizationLine[];
@@ -43,8 +46,6 @@ type CheckoutForm = {
 };
 
 type SubmitState = "idle" | "submitting" | "success" | "error";
-
-const DELIVERY_FEE = ORDER_DELIVERY_FEE;
 
 const paymentLabels: Record<PaymentMethod, string> = {
   pix: "Pix",
@@ -242,10 +243,6 @@ function buildComboCustomizationLines(
   });
 }
 
-function getDeliveryFee(deliveryMethod: DeliveryMethod, totalItems: number) {
-  return 0; // Taxa de entrega a combinar
-}
-
 function subscribeCatalogStore(onStoreChange: () => void) {
   window.addEventListener("storage", onStoreChange);
   window.addEventListener("dna-catalog-updated", onStoreChange);
@@ -270,7 +267,7 @@ function parseCatalogSnapshot(snapshot: string) {
   }
 
   try {
-    return JSON.parse(snapshot) as CatalogData;
+    return withCatalogProductImages(JSON.parse(snapshot) as CatalogData);
   } catch {
     return initialCatalog;
   }
@@ -298,6 +295,7 @@ export function MenuCatalog() {
   const [checkout, setCheckout] = useState<CheckoutForm>(initialCheckoutForm);
   const [submitState, setSubmitState] = useState<SubmitState>("idle");
   const [submitMessage, setSubmitMessage] = useState("");
+  const [isCartDrawerOpen, setIsCartDrawerOpen] = useState(false);
 
   const { categories, complementGroups, products } = catalog;
   const cartItems = Object.values(cart);
@@ -332,8 +330,7 @@ export function MenuCatalog() {
     (total, item) => total + item.unitPrice * item.quantity,
     0,
   );
-  const deliveryFee = getDeliveryFee(checkout.deliveryMethod, totalItems);
-  const orderTotal = totalPrice + deliveryFee;
+  const orderTotal = totalPrice;
   const canCheckout =
     totalItems > 0 &&
     checkout.customerName.trim().length > 0 &&
@@ -351,6 +348,49 @@ export function MenuCatalog() {
 
     return (selections[group.id] ?? []).length >= (group.minSelections ?? 1);
   });
+
+  useEffect(() => {
+    if (!isCartDrawerOpen) {
+      return;
+    }
+
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [isCartDrawerOpen]);
+
+  useEffect(() => {
+    if (!isCartDrawerOpen) {
+      return;
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsCartDrawerOpen(false);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isCartDrawerOpen]);
+
+  useEffect(() => {
+    const desktopQuery = window.matchMedia("(min-width: 1024px)");
+
+    function handleBreakpointChange(event: MediaQueryListEvent) {
+      if (event.matches) {
+        setIsCartDrawerOpen(false);
+      }
+    }
+
+    desktopQuery.addEventListener("change", handleBreakpointChange);
+
+    return () => desktopQuery.removeEventListener("change", handleBreakpointChange);
+  }, []);
 
   function getProductQuantity(productId: string) {
     return cartItems
@@ -387,6 +427,8 @@ export function MenuCatalog() {
           id: product.id,
           productId: product.id,
           name: product.name,
+          image: product.image,
+          imagePosition: product.imagePosition,
           quantity: (currentItem?.quantity ?? 0) + 1,
           unitPrice: product.price,
         },
@@ -439,6 +481,8 @@ export function MenuCatalog() {
             id: itemId,
             productId: customizingProduct.id,
             name: customizingProduct.name,
+            image: customizingProduct.image,
+            imagePosition: customizingProduct.imagePosition,
             quantity: (currentItem?.quantity ?? 0) + 1,
             unitPrice: customizingProduct.price,
             customization,
@@ -474,6 +518,8 @@ export function MenuCatalog() {
           id: itemId,
           productId: customizingProduct.id,
           name: customizingProduct.name,
+          image: customizingProduct.image,
+          imagePosition: customizingProduct.imagePosition,
           quantity: (currentItem?.quantity ?? 0) + 1,
           unitPrice,
           customization,
@@ -545,7 +591,7 @@ export function MenuCatalog() {
         customization: item.customization ?? [],
       })),
       subtotal: totalPrice,
-      deliveryFee,
+      deliveryFee: null,
       total: orderTotal,
     };
   }
@@ -579,11 +625,13 @@ export function MenuCatalog() {
         "Pedido enviado com sucesso! Em breve entraremos em contato pelo WhatsApp.",
       );
     } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+
       setSubmitState("error");
       setSubmitMessage(
-        error instanceof Error
-          ? error.message
-          : "Não foi possível enviar o pedido. Tente novamente.",
+        message.includes("Banco de dados não configurado")
+          ? "Não foi possível enviar o pedido porque o banco de dados ainda não foi configurado."
+          : message || "Não foi possível enviar o pedido. Tente novamente.",
       );
     }
   }
@@ -683,15 +731,26 @@ export function MenuCatalog() {
     }));
   }
 
+  function openCartDrawer() {
+    if (window.matchMedia("(min-width: 1024px)").matches) {
+      return;
+    }
+
+    setIsCartDrawerOpen(true);
+  }
+
   return (
-    <section id="cardapio" className="bg-[#fffaf0] px-5 py-10 md:px-8 lg:py-14">
+    <section
+      id="cardapio"
+      className="bg-[#fffaf0] px-4 py-10 pb-28 md:px-8 lg:py-14"
+    >
       <div className="mx-auto max-w-7xl">
         <div className="flex flex-col justify-between gap-6 border-b border-[#d7a948]/35 pb-7 md:flex-row md:items-end">
           <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#4b164c]">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#4b164c] md:text-sm md:tracking-[0.18em]">
               Cardápio digital
             </p>
-            <h2 className="mt-3 text-3xl font-semibold text-[#103d2c] md:text-4xl">
+            <h2 className="mt-3 text-2xl font-semibold text-[#103d2c] sm:text-3xl md:text-4xl">
               Monte seu pedido DNA
             </h2>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-[#526354]">
@@ -701,10 +760,14 @@ export function MenuCatalog() {
             </p>
           </div>
 
-          <CartTotal totalItems={totalItems} totalPrice={orderTotal} />
+          <CartTotal
+            totalItems={totalItems}
+            totalPrice={orderTotal}
+            onOpen={openCartDrawer}
+          />
         </div>
 
-        <div className="sticky top-0 z-10 -mx-5 mt-6 border-y border-[#d7a948]/25 bg-[#fffaf0]/95 px-5 py-3 backdrop-blur md:top-0 md:-mx-8 md:px-8">
+        <div className="sticky top-0 z-10 -mx-4 mt-6 border-y border-[#d7a948]/25 bg-[#fffaf0]/95 px-4 py-3 backdrop-blur md:top-0 md:-mx-8 md:px-8">
           <div className="mx-auto flex max-w-7xl gap-2 overflow-x-auto pb-1">
             <CategoryButton
               active={activeCategory === "todos"}
@@ -727,7 +790,7 @@ export function MenuCatalog() {
         </div>
 
         <div className="grid gap-8 pt-8 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="space-y-8">
+          <div className="min-w-0 space-y-8">
             {activeCategory === "todos" ? (
               categories.map((category) => {
                 const categoryProducts = products.filter(
@@ -770,8 +833,6 @@ export function MenuCatalog() {
             cartItems={cartItems}
             checkout={checkout}
             canCheckout={canCheckout}
-            deliveryFee={deliveryFee}
-            orderTotal={orderTotal}
             subtotal={totalPrice}
             submitMessage={submitMessage}
             submitState={submitState}
@@ -783,6 +844,40 @@ export function MenuCatalog() {
           />
         </div>
       </div>
+
+      <MobileCartDock
+        totalItems={totalItems}
+        totalPrice={orderTotal}
+        onOpen={openCartDrawer}
+      />
+
+      {isCartDrawerOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-end bg-[#16221a]/60 pt-8 backdrop-blur-sm lg:hidden"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Carrinho"
+          onClick={() => setIsCartDrawerOpen(false)}
+        >
+          <div className="w-full" onClick={(event) => event.stopPropagation()}>
+            <OrderSummary
+              variant="drawer"
+              cartItems={cartItems}
+              checkout={checkout}
+              canCheckout={canCheckout}
+              subtotal={totalPrice}
+              submitMessage={submitMessage}
+              submitState={submitState}
+              totalItems={totalItems}
+              onClose={() => setIsCartDrawerOpen(false)}
+              onIncrement={incrementCartItem}
+              onDecrement={decrementCartItem}
+              onCheckoutChange={updateCheckoutField}
+              onSubmit={submitOrder}
+            />
+          </div>
+        </div>
+      ) : null}
 
       {customizingProduct ? (
         <CupCustomizer
@@ -809,14 +904,16 @@ export function MenuCatalog() {
 }
 
 function CartTotal({
+  onOpen,
   totalItems,
   totalPrice,
 }: {
+  onOpen?: () => void;
   totalItems: number;
   totalPrice: number;
 }) {
-  return (
-    <div className="flex min-h-14 items-center justify-between gap-4 border border-[#d7a948]/45 bg-white px-4">
+  const content = (
+    <>
       <div>
         <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#4b164c]">
           Sacola
@@ -828,6 +925,60 @@ function CartTotal({
       <p className="text-lg font-semibold text-[#4b164c]">
         {formatCurrency(totalPrice)}
       </p>
+    </>
+  );
+
+  if (onOpen) {
+    return (
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex min-h-14 w-full items-center justify-between gap-4 border border-[#d7a948]/45 bg-white px-4 text-left transition hover:border-[#d7a948] hover:bg-[#fff7e3] md:w-auto"
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex min-h-14 items-center justify-between gap-4 border border-[#d7a948]/45 bg-white px-4">
+      {content}
+    </div>
+  );
+}
+
+function MobileCartDock({
+  onOpen,
+  totalItems,
+  totalPrice,
+}: {
+  onOpen: () => void;
+  totalItems: number;
+  totalPrice: number;
+}) {
+  if (totalItems === 0) {
+    return null;
+  }
+
+  return (
+    <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[#d7a948]/35 bg-[#fffaf0]/96 px-4 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 shadow-[0_-14px_34px_rgba(16,61,44,0.14)] backdrop-blur lg:hidden">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex min-h-14 w-full items-center justify-between gap-4 bg-[#103d2c] px-4 text-left text-white shadow-[0_12px_28px_rgba(16,61,44,0.22)] transition active:translate-y-px"
+      >
+        <span>
+          <span className="block text-xs font-semibold uppercase tracking-[0.12em] text-[#d7a948]">
+            Sacola
+          </span>
+          <span className="block text-sm font-semibold">
+            {totalItems} {totalItems === 1 ? "item" : "itens"}
+          </span>
+        </span>
+        <span className="text-base font-semibold">
+          {formatCurrency(totalPrice)}
+        </span>
+      </button>
     </div>
   );
 }
@@ -923,9 +1074,16 @@ function ProductCard({
   const metaItems = [product.serves, product.preparationTime].filter(Boolean);
   const hasBadges = product.tag || product.customizable || metaItems.length > 0;
   const productIsCombo = isComboProduct(product);
+  const showProductImage = Boolean(product.image) && !productIsCombo;
 
   return (
-    <article className="grid min-h-40 grid-cols-[1fr_118px] gap-4 rounded-[8px] border border-[#d7a948]/30 bg-white p-4 shadow-[0_12px_34px_rgba(16,61,44,0.06)] transition hover:border-[#d7a948] hover:shadow-[0_18px_46px_rgba(16,61,44,0.12)] sm:grid-cols-[1fr_148px]">
+    <article
+      className={`grid min-h-40 grid-cols-1 gap-3 rounded-[8px] border border-[#d7a948]/30 bg-white p-3 shadow-[0_12px_34px_rgba(16,61,44,0.06)] transition hover:border-[#d7a948] hover:shadow-[0_18px_46px_rgba(16,61,44,0.12)] sm:gap-4 sm:p-4 ${
+        showProductImage
+          ? "min-[430px]:grid-cols-[minmax(0,1fr)_136px] md:grid-cols-[minmax(0,1fr)_148px]"
+          : ""
+      }`}
+    >
       <div className="flex min-w-0 flex-col">
         {hasBadges ? (
           <div className="flex flex-wrap items-center gap-2">
@@ -947,7 +1105,9 @@ function ProductCard({
           </div>
         ) : null}
 
-        <h4 className="mt-3 text-lg font-semibold text-[#103d2c]">{product.name}</h4>
+        <h4 className="mt-3 text-base font-semibold leading-snug text-[#103d2c] sm:text-lg">
+          {product.name}
+        </h4>
         <p className="mt-2 line-clamp-2 text-sm leading-6 text-[#526354]">
           {product.description}
         </p>
@@ -981,27 +1141,27 @@ function ProductCard({
             <button
               type="button"
               onClick={onCustomize}
-              className="min-h-10 border border-[#103d2c] bg-[#103d2c] px-4 text-sm font-semibold text-white transition hover:border-[#d7a948] hover:bg-[#d7a948] hover:text-[#103d2c]"
+              className="min-h-11 border border-[#103d2c] bg-[#103d2c] px-4 text-sm font-semibold text-white transition hover:border-[#d7a948] hover:bg-[#d7a948] hover:text-[#103d2c]"
             >
               {productIsCombo ? "Adicionar" : "Personalizar"}
             </button>
           ) : quantity > 0 ? (
-            <div className="flex min-h-10 items-center border border-[#103d2c]">
+            <div className="flex min-h-11 items-center border border-[#103d2c]">
               <button
                 type="button"
                 onClick={onRemove}
-                className="grid size-10 place-items-center text-xl font-semibold text-[#103d2c] transition hover:bg-[#f3ead2]"
+                className="grid size-11 place-items-center text-xl font-semibold text-[#103d2c] transition hover:bg-[#f3ead2]"
                 aria-label={`Remover ${product.name}`}
               >
                 -
               </button>
-              <span className="grid min-w-9 place-items-center text-sm font-semibold text-[#103d2c]">
+              <span className="grid min-w-10 place-items-center text-sm font-semibold text-[#103d2c]">
                 {quantity}
               </span>
               <button
                 type="button"
                 onClick={onAdd}
-                className="grid size-10 place-items-center bg-[#103d2c] text-xl font-semibold text-white transition hover:bg-[#4b164c]"
+                className="grid size-11 place-items-center bg-[#103d2c] text-xl font-semibold text-white transition hover:bg-[#4b164c]"
                 aria-label={`Adicionar mais ${product.name}`}
               >
                 +
@@ -1011,7 +1171,7 @@ function ProductCard({
             <button
               type="button"
               onClick={onAdd}
-              className="grid size-10 place-items-center bg-[#103d2c] text-xl font-semibold text-white transition hover:bg-[#4b164c]"
+              className="grid size-11 place-items-center bg-[#103d2c] text-xl font-semibold text-white transition hover:bg-[#4b164c]"
               aria-label={`Adicionar ${product.name}`}
             >
               +
@@ -1020,13 +1180,15 @@ function ProductCard({
         </div>
       </div>
 
-      <div className="relative overflow-hidden rounded-[8px] bg-[#103d2c]">
-        <CatalogImage
-          src={product.image}
-          alt={product.name}
-          position={product.imagePosition}
-        />
-      </div>
+      {showProductImage ? (
+        <div className="relative order-first min-h-36 overflow-hidden rounded-[8px] bg-[#103d2c] min-[430px]:order-none min-[430px]:min-h-full">
+          <CatalogImage
+            src={product.image}
+            alt={product.name}
+            position={product.imagePosition}
+          />
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -1062,12 +1224,12 @@ function OrderSummary({
   cartItems,
   checkout,
   canCheckout,
-  deliveryFee,
-  orderTotal,
+  onClose,
   subtotal,
   submitMessage,
   submitState,
   totalItems,
+  variant = "sidebar",
   onIncrement,
   onDecrement,
   onCheckoutChange,
@@ -1076,12 +1238,12 @@ function OrderSummary({
   cartItems: CartItem[];
   checkout: CheckoutForm;
   canCheckout: boolean;
-  deliveryFee: number;
-  orderTotal: number;
+  onClose?: () => void;
   subtotal: number;
   submitMessage: string;
   submitState: SubmitState;
   totalItems: number;
+  variant?: "sidebar" | "drawer";
   onIncrement: (itemId: string) => void;
   onDecrement: (itemId: string) => void;
   onCheckoutChange: <Key extends keyof CheckoutForm>(
@@ -1090,15 +1252,52 @@ function OrderSummary({
   ) => void;
   onSubmit: () => void;
 }) {
+  const isDrawer = variant === "drawer";
+
   return (
-    <aside className="lg:block">
-      <div className="sticky top-24 rounded-[8px] border border-[#d7a948]/40 bg-white p-5 shadow-[0_18px_50px_rgba(16,61,44,0.08)]">
-        <p className="text-sm font-semibold uppercase tracking-[0.14em] text-[#4b164c]">
-          Carrinho
-        </p>
-        <h3 className="mt-2 text-2xl font-semibold text-[#103d2c]">
-          Finalizar pedido
-        </h3>
+    <aside className={isDrawer ? "h-full" : "hidden lg:block"}>
+      <div
+        className={
+          isDrawer
+            ? "flex max-h-[min(88dvh,760px)] w-full flex-col overflow-hidden rounded-t-[18px] border border-[#d7a948]/40 bg-white shadow-[0_-24px_70px_rgba(0,0,0,0.28)]"
+            : "sticky top-24 rounded-[8px] border border-[#d7a948]/40 bg-white p-5 shadow-[0_18px_50px_rgba(16,61,44,0.08)]"
+        }
+      >
+        <div
+          className={
+            isDrawer
+              ? "flex shrink-0 items-start justify-between gap-4 border-b border-[#d7a948]/30 px-4 py-4"
+              : ""
+          }
+        >
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-[0.14em] text-[#4b164c]">
+              Carrinho
+            </p>
+            <h3 className="mt-2 text-xl font-semibold text-[#103d2c] sm:text-2xl">
+              Finalizar pedido
+            </h3>
+          </div>
+
+          {isDrawer ? (
+            <button
+              type="button"
+              onClick={onClose}
+              className="grid size-11 shrink-0 place-items-center border border-[#103d2c]/25 text-2xl leading-none text-[#103d2c] transition hover:bg-[#f3ead2]"
+              aria-label="Fechar carrinho"
+            >
+              ×
+            </button>
+          ) : null}
+        </div>
+
+        <div
+          className={
+            isDrawer
+              ? "min-h-0 overflow-y-auto px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-4"
+              : ""
+          }
+        >
 
         {totalItems === 0 ? (
           <p className="mt-5 text-sm leading-6 text-[#526354]">
@@ -1111,14 +1310,23 @@ function OrderSummary({
                 key={item.id}
                 className="border-b border-[#d7a948]/20 pb-4 last:border-b-0"
               >
-                <div className="flex items-start justify-between gap-4">
-                  <div>
+                <div className="flex items-start gap-3">
+                  {item.image ? (
+                    <div className="relative size-14 shrink-0 overflow-hidden rounded-[8px] bg-[#f3ead2]">
+                      <CatalogImage
+                        src={item.image}
+                        alt={item.name}
+                        position={item.imagePosition}
+                      />
+                    </div>
+                  ) : null}
+                  <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold text-[#103d2c]">{item.name}</p>
                     <p className="mt-1 text-xs text-[#526354]">
                       {item.quantity} x {formatCurrency(item.unitPrice)}
                     </p>
                   </div>
-                  <p className="text-sm font-semibold text-[#4b164c]">
+                  <p className="shrink-0 text-sm font-semibold text-[#4b164c]">
                     {formatCurrency(item.unitPrice * item.quantity)}
                   </p>
                 </div>
@@ -1127,22 +1335,22 @@ function OrderSummary({
                   <CustomizationSummary customization={item.customization} />
                 ) : null}
 
-                <div className="mt-3 flex min-h-9 w-fit items-center border border-[#103d2c]">
+                <div className="mt-3 flex min-h-11 w-fit items-center border border-[#103d2c]">
                   <button
                     type="button"
                     onClick={() => onDecrement(item.id)}
-                    className="grid size-9 place-items-center text-lg font-semibold text-[#103d2c] transition hover:bg-[#f3ead2]"
+                    className="grid size-11 place-items-center text-lg font-semibold text-[#103d2c] transition hover:bg-[#f3ead2]"
                     aria-label={`Diminuir ${item.name}`}
                   >
                     -
                   </button>
-                  <span className="grid min-w-8 place-items-center text-sm font-semibold text-[#103d2c]">
+                  <span className="grid min-w-10 place-items-center text-sm font-semibold text-[#103d2c]">
                     {item.quantity}
                   </span>
                   <button
                     type="button"
                     onClick={() => onIncrement(item.id)}
-                    className="grid size-9 place-items-center bg-[#103d2c] text-lg font-semibold text-white transition hover:bg-[#4b164c]"
+                    className="grid size-11 place-items-center bg-[#103d2c] text-lg font-semibold text-white transition hover:bg-[#4b164c]"
                     aria-label={`Aumentar ${item.name}`}
                   >
                     +
@@ -1246,7 +1454,7 @@ function OrderSummary({
                   key={method}
                   type="button"
                   onClick={() => onCheckoutChange("paymentMethod", method)}
-                  className={`min-h-10 border px-3 text-left text-sm font-semibold transition ${
+                  className={`min-h-11 border px-3 text-left text-sm font-semibold transition ${
                     checkout.paymentMethod === method
                       ? "border-[#103d2c] bg-[#103d2c] text-white"
                       : "border-[#d7a948]/45 bg-white text-[#103d2c] hover:bg-[#f3ead2]"
@@ -1327,6 +1535,7 @@ function OrderSummary({
               : "Preencha os dados"}
         </button>
 
+        </div>
       </div>
     </aside>
   );
@@ -1370,19 +1579,22 @@ function CupCustomizer({
   const isLastStep = !isCombo || currentStep === totalSteps - 1;
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#16221a]/70 px-4 py-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 grid items-end bg-[#16221a]/70 px-3 pt-8 backdrop-blur-sm sm:place-items-center sm:p-4">
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="customizer-title"
-        className="mx-auto flex max-h-[92vh] max-w-3xl flex-col overflow-hidden rounded-[8px] bg-[#fffaf0] shadow-[0_28px_90px_rgba(0,0,0,0.28)]"
+        className="mx-auto flex max-h-[calc(100dvh-2rem)] w-full max-w-3xl flex-col overflow-hidden rounded-t-[18px] bg-[#fffaf0] shadow-[0_28px_90px_rgba(0,0,0,0.28)] sm:max-h-[92vh] sm:rounded-[8px]"
       >
-        <div className="grid gap-4 border-b border-[#d7a948]/35 bg-white p-5 sm:grid-cols-[1fr_140px]">
+        <div className="grid gap-4 border-b border-[#d7a948]/35 bg-white p-4 sm:grid-cols-[1fr_140px] sm:p-5">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#4b164c]">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#4b164c] sm:tracking-[0.16em]">
               {isCombo ? product.name : "Personalize seu copo"}
             </p>
-            <h3 id="customizer-title" className="mt-2 text-2xl font-semibold text-[#103d2c]">
+            <h3
+              id="customizer-title"
+              className="mt-2 text-xl font-semibold leading-tight text-[#103d2c] sm:text-2xl"
+            >
               {isCombo && activeComboCup
                 ? `Personalize o ${activeComboCup.label}`
                 : product.name}
@@ -1406,16 +1618,18 @@ function CupCustomizer({
             ) : null}
           </div>
 
-          <div className="relative min-h-32 overflow-hidden rounded-[8px] bg-[#103d2c]">
-            <CatalogImage
-              src={product.image}
-              alt={product.name}
-              position={product.imagePosition}
-            />
-          </div>
+          {product.image ? (
+            <div className="relative hidden min-h-32 overflow-hidden rounded-[8px] bg-[#103d2c] sm:block">
+              <CatalogImage
+                src={product.image}
+                alt={product.name}
+                position={product.imagePosition}
+              />
+            </div>
+          ) : null}
         </div>
 
-        <div className="overflow-y-auto px-5 py-4">
+        <div className="overflow-y-auto px-4 py-4 sm:px-5">
           <div className="space-y-5">
             {complementGroups.map((group) => (
               <ComplementGroupSelector
@@ -1433,7 +1647,7 @@ function CupCustomizer({
           </div>
         </div>
 
-        <div className="border-t border-[#d7a948]/35 bg-white p-5">
+        <div className="border-t border-[#d7a948]/35 bg-white p-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] sm:p-5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#4b164c]">
@@ -1552,7 +1766,7 @@ function ComplementOptionButton({
       type="button"
       onClick={onToggle}
       aria-disabled={disabled}
-      className={`grid min-h-16 grid-cols-[24px_1fr_auto] items-center gap-3 rounded-[8px] border px-3 py-3 text-left transition ${
+      className={`grid min-h-16 grid-cols-[24px_minmax(0,1fr)_auto] items-center gap-3 rounded-[8px] border px-3 py-3 text-left transition ${
         selected
           ? "border-[#103d2c] bg-[#f3ead2]"
           : "border-[#d7a948]/25 bg-white hover:border-[#d7a948]"
@@ -1568,7 +1782,7 @@ function ComplementOptionButton({
         {selected ? <span className="size-2 bg-[#d7a948]" /> : null}
       </span>
 
-      <span>
+      <span className="min-w-0">
         <span className="block text-sm font-semibold text-[#103d2c]">
           {option.name}
         </span>
@@ -1579,7 +1793,7 @@ function ComplementOptionButton({
         ) : null}
       </span>
 
-      <span className="text-sm font-semibold text-[#4b164c]">
+      <span className="shrink-0 text-sm font-semibold text-[#4b164c]">
         {formatOptionPrice(option.price)}
       </span>
     </button>
@@ -1595,15 +1809,22 @@ function CatalogImage({
   position: string;
   src: string;
 }) {
+  const canRenderImage = src.startsWith("/images/");
+
   return (
     <div
-      aria-label={alt}
-      className="h-full min-h-full w-full bg-cover bg-center"
-      role="img"
-      style={{
-        backgroundImage: src ? `url(${src})` : undefined,
-        backgroundPosition: position,
-      }}
-    />
+      className="relative h-full min-h-full w-full overflow-hidden bg-[radial-gradient(circle_at_50%_42%,#fff7df_0%,#f3ead2_48%,#e2cf9f_100%)]"
+    >
+      {canRenderImage ? (
+        <Image
+          src={src}
+          alt={alt}
+          fill
+          sizes="(max-width: 430px) 100vw, 180px"
+          className="object-contain p-2 drop-shadow-[0_16px_24px_rgba(22,34,26,0.22)]"
+          style={{ objectPosition: position }}
+        />
+      ) : null}
+    </div>
   );
 }

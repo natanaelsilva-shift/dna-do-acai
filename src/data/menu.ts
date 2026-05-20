@@ -55,8 +55,77 @@ export type CatalogData = {
 
 export const CATALOG_STORAGE_KEY = "dna-do-acai-catalog-v3";
 
-export const heroImage =
-  "https://upload.wikimedia.org/wikipedia/commons/8/86/Acai_Smoothie_Bowls_%28Unsplash%29.jpg";
+export const productImages = {
+  dnaExplosao: "/images/dna-explosao.avif",
+  dnaSupremo: "/images/dna-supremo.avif",
+  acaiPuro300: "/images/acai-puro-300.jpg",
+  acaiPuro500: "/images/acai-puro-500.avif",
+} as const;
+
+export const defaultProductImage = productImages.dnaExplosao;
+
+type ProductImageDefaults = Pick<Product, "image" | "imagePosition">;
+
+export const productImageDefaults: Record<string, ProductImageDefaults> = {
+  "dna-explosao-300ml": {
+    image: productImages.dnaExplosao,
+    imagePosition: "50% 46%",
+  },
+  "dna-supremo-500ml": {
+    image: productImages.dnaSupremo,
+    imagePosition: "50% 46%",
+  },
+  "copo-acai-puro-300ml": {
+    image: productImages.acaiPuro300,
+    imagePosition: "50% 45%",
+  },
+  "copo-acai-puro-500ml": {
+    image: productImages.acaiPuro500,
+    imagePosition: "50% 46%",
+  },
+  "combo-supremo-dna": {
+    image: "",
+    imagePosition: "50% 50%",
+  },
+  "combo-explosao-dna": {
+    image: "",
+    imagePosition: "50% 50%",
+  },
+  "combo-triplo-explosao": {
+    image: "",
+    imagePosition: "50% 50%",
+  },
+  "combo-triplo-supremo": {
+    image: "",
+    imagePosition: "50% 50%",
+  },
+};
+
+const isLocalProductImage = (image: string) => image.startsWith("/images/");
+
+export function withCatalogProductImages(catalog: CatalogData): CatalogData {
+  return {
+    ...catalog,
+    products: catalog.products.map((product) => {
+      const defaults = productImageDefaults[product.id];
+
+      if (defaults) {
+        return {
+          ...product,
+          ...defaults,
+        };
+      }
+
+      const image = typeof product.image === "string" ? product.image : "";
+
+      return {
+        ...product,
+        image: isLocalProductImage(image) ? image : defaultProductImage,
+        imagePosition: product.imagePosition || "50% 46%",
+      };
+    }),
+  };
+}
 
 export const categories: Category[] = [
   {
@@ -84,8 +153,8 @@ export const products: Product[] = [
     description:
       "Monte seu açaí de 300ml do seu jeito, com diversos complementos.",
     price: 1299,
-    image: heroImage,
-    imagePosition: "18% 50%",
+    image: productImages.dnaExplosao,
+    imagePosition: "50% 46%",
     customizable: true,
     complementLimit: 3,
   },
@@ -96,8 +165,8 @@ export const products: Product[] = [
     description:
       "Monte seu açaí de 500ml do seu jeito, com diversos complementos.",
     price: 1899,
-    image: heroImage,
-    imagePosition: "54% 50%",
+    image: productImages.dnaSupremo,
+    imagePosition: "50% 46%",
     customizable: true,
     complementLimit: 4,
   },
@@ -108,8 +177,8 @@ export const products: Product[] = [
     description:
       "Açaí 100% puro, cremoso e geladinho. Sabor original de verdade.",
     price: 999,
-    image: heroImage,
-    imagePosition: "22% 42%",
+    image: productImages.acaiPuro300,
+    imagePosition: "50% 45%",
   },
   {
     id: "copo-acai-puro-500ml",
@@ -118,8 +187,8 @@ export const products: Product[] = [
     description:
       "Açaí puro em tamanho maior, bem servido e super cremoso.",
     price: 1499,
-    image: heroImage,
-    imagePosition: "48% 44%",
+    image: productImages.acaiPuro500,
+    imagePosition: "50% 46%",
   },
   {
     id: "combo-supremo-dna",
@@ -127,8 +196,8 @@ export const products: Product[] = [
     name: "Combo Supremo DNA",
     description: "2 copões de 500ml com até 4 complementos cada.",
     price: 3599,
-    image: heroImage,
-    imagePosition: "38% 50%",
+    image: "",
+    imagePosition: "50% 50%",
     customizable: true,
     comboCups: [
       {
@@ -151,8 +220,8 @@ export const products: Product[] = [
     name: "Combo Explosão DNA",
     description: "2 açaís de 300ml com até 3 complementos cada.",
     price: 2499,
-    image: heroImage,
-    imagePosition: "60% 50%",
+    image: "",
+    imagePosition: "50% 50%",
     customizable: true,
     comboCups: [
       {
@@ -175,8 +244,8 @@ export const products: Product[] = [
     name: "Combo Triplo Explosão",
     description: "2 açaís completos de 300ml + 1 açaí puro 300ml.",
     price: 2999,
-    image: heroImage,
-    imagePosition: "16% 64%",
+    image: "",
+    imagePosition: "50% 50%",
     customizable: true,
     comboCups: [
       {
@@ -205,8 +274,8 @@ export const products: Product[] = [
     name: "Combo Triplo Supremo",
     description: "2 açaís completos de 500ml + 1 açaí puro 500ml.",
     price: 4299,
-    image: heroImage,
-    imagePosition: "70% 64%",
+    image: "",
+    imagePosition: "50% 50%",
     customizable: true,
     comboCups: [
       {

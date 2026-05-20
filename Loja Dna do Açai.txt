@@ -1,0 +1,401 @@
+Crie um site completo para a loja “DNA do Açaí”.
+
+OBJETIVO:
+Desenvolver um sistema completo de pedidos online para açaiteria, onde o cliente acessa o site, escolhe os produtos, personaliza os complementos, adiciona ao carrinho e finaliza o pedido pelo WhatsApp da loja.
+
+O pedido deve chegar formatado automaticamente no WhatsApp com:
+
+* produtos
+* complementos
+* valores
+* dados do cliente
+* endereço
+* forma de pagamento
+* observações
+
+O sistema deve possuir:
+
+* Frontend profissional
+* Painel administrativo
+* Gerenciamento de produtos
+* Gerenciamento de imagens
+* Gerenciamento de preços
+* Gerenciamento de categorias
+* Gerenciamento de complementos
+* Controle de funcionamento da loja
+
+IDENTIDADE VISUAL:
+
+* Nome da loja: DNA do Açaí
+* Slogan: “Açaí de verdade, do seu jeito!”
+* Estilo visual:
+
+  * moderno
+  * premium
+  * gourmet
+  * inspirado em iFood
+* Cores:
+
+  * Verde escuro
+  * Roxo escuro
+  * Dourado/amarelo
+  * Branco para textos
+* Layout responsivo mobile-first
+* Interface simples e didática
+
+CONTATOS:
+
+* WhatsApp principal: 5562991102715
+* Instagram: @dnadoacai
+
+FUNCIONALIDADES DO CLIENTE:
+
+1. Página inicial:
+
+* Logo da empresa
+* Banner principal
+* Destaque para produtos
+* Destaque para combos
+* Botão “Pedir Agora”
+* Seção institucional
+* Rodapé com WhatsApp e Instagram
+
+2. Cardápio online:
+   Separado por categorias:
+
+* Monte Seu Açaí
+* Açaí Puro
+* Combos
+
+3. Produtos:
+
+CATEGORIA: MONTE SEU AÇAÍ
+
+Produto:
+DNA Explosão (300ml)
+Preço:
+R$ 12,99
+Descrição:
+Monte seu açaí de 300ml do seu jeito.
+Regra:
+Até 3 complementos.
+
+Produto:
+DNA Supremo (500ml)
+Preço:
+R$ 18,99
+Descrição:
+Monte seu açaí de 500ml do seu jeito.
+Regra:
+Até 4 complementos.
+
+COMPLEMENTOS DISPONÍVEIS:
+
+* Banana
+* Morango
+* Leite condensado
+* Leite em pó
+* Granola
+* Paçoca
+
+CATEGORIA: AÇAÍ PURO
+
+Produto:
+Copo de Açaí Puro (300ml)
+Preço:
+R$ 9,99
+Descrição:
+Açaí 100% puro, cremoso e geladinho. Sabor original de verdade.
+
+Produto:
+Copo de Açaí Puro (500ml)
+Preço:
+R$ 14,99
+Descrição:
+Açaí puro em tamanho maior, bem servido e super cremoso.
+
+CATEGORIA: COMBOS
+
+Produto:
+Combo Supremo DNA
+Preço:
+R$ 35,99
+Descrição:
+2 copões de 500ml com até 4 complementos cada.
+
+Regras:
+1º copo:
+até 4 complementos
+
+2º copo:
+até 4 complementos
+
+Produto:
+Combo Explosão DNA
+Preço:
+R$ 24,99
+Descrição:
+2 açaís de 300ml com até 3 complementos cada.
+
+Regras:
+1º copo:
+até 3 complementos
+
+2º copo:
+até 3 complementos
+
+Produto:
+Combo Triplo Explosão
+Preço:
+R$ 29,99
+Descrição:
+2 açaís completos de 300ml + 1 açaí puro 300ml.
+
+Regras:
+1º copo:
+até 3 complementos
+
+2º copo:
+até 3 complementos
+
+3º copo:
+Açaí puro sem complementos
+
+Produto:
+Combo Triplo Supremo
+Preço:
+R$ 42,99
+Descrição:
+2 açaís completos de 500ml + 1 açaí puro 500ml.
+
+Regras:
+1º copo:
+até 4 complementos
+
+2º copo:
+até 4 complementos
+
+3º copo:
+Açaí puro sem complementos
+
+4. Carrinho:
+
+* Adicionar produtos
+* Editar quantidade
+* Remover item
+* Mostrar subtotal
+* Mostrar complementos escolhidos
+* Separar complementos por copo nos combos
+* Atualizar valores automaticamente
+
+5. Finalização:
+   Campos:
+
+* Nome
+* Telefone
+* Endereço
+* Bairro
+* Número
+* Complemento
+* Ponto de referência
+* Forma de pagamento
+* Troco
+* Observações
+
+Formas de pagamento:
+
+* Pix
+* Dinheiro
+* Cartão
+
+6. Pedido via WhatsApp:
+   Ao finalizar, abrir WhatsApp da loja com mensagem formatada automaticamente.
+
+Exemplo:
+
+NOVO PEDIDO — DNA DO AÇAÍ
+
+Cliente:
+Nome
+
+Telefone:
+Telefone
+
+Endereço:
+Rua, número, bairro
+
+Itens:
+1x DNA Supremo 500ml
+Complementos:
+
+* Banana
+* Morango
+* Leite condensado
+* Granola
+
+1x Combo Explosão DNA
+
+1º Copo:
+
+* Morango
+* Granola
+
+2º Copo:
+
+* Banana
+* Paçoca
+
+Subtotal:
+R$ XX,XX
+
+Entrega:
+A combinar
+
+Total:
+R$ XX,XX
+
+Pagamento:
+Pix
+
+Observações:
+Sem observações
+
+PAINEL ADMINISTRATIVO:
+
+Criar painel admin protegido por login e senha.
+
+O admin deve conseguir:
+
+* Login/logout
+* Dashboard
+* Cadastrar produto
+* Editar produto
+* Excluir produto
+* Ativar/desativar produto
+* Alterar preço
+* Alterar descrição
+* Criar categorias
+* Editar categorias
+* Excluir categorias
+* Criar complementos
+* Editar complementos
+* Excluir complementos
+* Definir limite de complementos por produto
+* Configurar combos
+* Configurar quantidade de copos do combo
+* Alterar WhatsApp
+* Alterar Instagram
+* Definir loja aberta/fechada
+* Definir horário de funcionamento
+
+GERENCIAMENTO DE IMAGENS:
+
+No painel admin criar área completa para gerenciamento de imagens.
+
+O admin deve conseguir:
+
+* Fazer upload de imagens
+* Trocar imagem
+* Excluir imagem
+* Definir imagem principal
+* Visualizar preview
+* Upload drag and drop
+* Suportar JPG, PNG e WEBP
+* Redimensionar imagens automaticamente
+* Múltiplas imagens por produto
+
+As imagens devem aparecer:
+
+* em alta qualidade
+* em cards modernos
+* estilo visual iFood
+* com foco visual no produto
+
+ESTRUTURA DO SITE:
+
+Criar:
+
+* Header
+* Banner principal
+* Sessão de categorias
+* Sessão de produtos
+* Carrinho lateral no mobile
+* Modal de complementos
+* Footer
+* Botão flutuante do WhatsApp
+
+DESIGN:
+
+* Layout premium
+* Visual profissional
+* Cards modernos
+* Interface rápida
+* Responsivo
+* Mobile-first
+* Animações suaves
+* UX intuitiva
+
+BANCO DE DADOS:
+
+Criar estrutura para:
+
+* admins
+* categorias
+* produtos
+* imagens
+* complementos
+* regras de complementos
+* combos
+* pedidos
+* configurações
+
+UPLOAD DE IMAGENS:
+Usar:
+
+* Supabase Storage
+  ou
+* Cloudinary
+
+TECNOLOGIAS:
+Frontend:
+
+* Next.js
+* React
+* TailwindCSS
+
+Backend:
+
+* Next.js API Routes
+  ou
+* Node.js + Express
+
+Banco:
+
+* PostgreSQL
+  ou
+* Supabase
+
+Deploy:
+
+* Vercel
+
+EXTRAS IMPORTANTES:
+
+* Código organizado
+* Componentes reutilizáveis
+* SEO básico
+* Loading states
+* Toasts de sucesso e erro
+* Validações de formulário
+* Validação de limite de complementos
+* Sistema rápido e otimizado
+* README completo
+* Arquivo .env.example
+* Seed inicial do banco
+* Instruções de instalação
+* Instruções de deploy
+
+IMPORTANTE:
+O site deve parecer um sistema profissional de delivery, inspirado visualmente no iFood, porém com identidade própria da marca DNA do Açaí.
+
+Criar toda estrutura pronta para produção.

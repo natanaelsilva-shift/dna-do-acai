@@ -12,7 +12,7 @@ create table if not exists public.orders (
   neighborhood text,
   items jsonb not null default '[]'::jsonb,
   subtotal integer not null check (subtotal >= 0),
-  delivery_fee integer not null check (delivery_fee >= 0),
+  delivery_fee integer check (delivery_fee >= 0),
   total integer not null check (total >= 0),
   payment_method text not null check (payment_method in ('pix', 'card', 'cash')),
   payment_label text not null,
@@ -36,6 +36,8 @@ create index if not exists orders_created_at_idx on public.orders (created_at de
 create index if not exists orders_status_idx on public.orders (status);
 
 alter table public.orders enable row level security;
+
+alter table public.orders alter column delivery_fee drop not null;
 
 drop policy if exists "orders_public_insert" on public.orders;
 drop policy if exists "orders_public_select" on public.orders;

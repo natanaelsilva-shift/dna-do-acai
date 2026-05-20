@@ -16,6 +16,13 @@ npm install
 cp .env.example .env.local
 ```
 
+Preencha no `.env.local` os valores do seu projeto Supabase:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=https://seu-projeto.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sua-chave-publishable
+```
+
 3. Crie a tabela de pedidos no Supabase executando o SQL em:
 
 ```bash

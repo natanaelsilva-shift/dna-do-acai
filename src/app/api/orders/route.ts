@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import {
-  ORDER_DELIVERY_FEE,
   WHATSAPP_BUSINESS_PHONE_NUMBER,
   type CreateOrderPayload,
   type DeliveryMethod,
@@ -8,7 +7,11 @@ import {
   type OrderItem,
   type PaymentMethod,
 } from "@/data/orders";
-import { createClient } from "@/lib/supabase/server";
+import {
+  createLocalOrder,
+  listLocalOrders,
+} from "@/lib/orders/local-store";
+import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import { buildWhatsAppBusinessOrderPayload } from "@/lib/whatsapp/business";
 
 export const dynamic = "force-dynamic";
@@ -100,7 +103,6 @@ function normalizeOrderPayload(value: unknown): CreateOrderPayload {
   const paymentMethod = asPaymentMethod(record.paymentMethod);
   const items = normalizeItems(record.items);
   const subtotal = items.reduce((total, item) => total + item.totalPrice, 0);
-  const deliveryFee = 0; // Taxa de entrega a combinar
 
   return {
     customerName: asString(record.customerName),
@@ -114,8 +116,8 @@ function normalizeOrderPayload(value: unknown): CreateOrderPayload {
     notes: asString(record.notes),
     items,
     subtotal,
-    deliveryFee,
-    total: subtotal + deliveryFee,
+    deliveryFee: null,
+    total: subtotal,
   };
 }
 
@@ -141,6 +143,10 @@ function validateOrder(order: CreateOrderPayload) {
 
 export async function GET() {
   try {
+    if (!isSupabaseConfigured()) {
+      return NextResponse.json({ orders: await listLocalOrders() });
+    }
+
     const supabase = await createClient();
     const { data, error } = await supabase
       .from("orders")
@@ -169,6 +175,23 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: validationError }, { status: 400 });
     }
 
+    if (!isSupabaseConfigured()) {
+      const localOrder = await createLocalOrder(order);
+
+      return NextResponse.json(
+        {
+          order: {
+            id: localOrder.id,
+            order_number: localOrder.order_number,
+            created_at: localOrder.created_at,
+            status: localOrder.status,
+          },
+          storage: "local",
+        },
+        { status: 201 },
+      );
+    }
+
     const supabase = await createClient();
     const { data, error } = await supabase
       .from("orders")
@@ -181,7 +204,7 @@ export async function POST(request: Request) {
           order.deliveryMethod === "delivery" ? order.neighborhood || null : null,
         items: order.items,
         subtotal: order.subtotal,
-        delivery_fee: order.deliveryFee,
+        delivery_fee: null,
         total: order.total,
         payment_method: order.paymentMethod,
         payment_label: order.paymentLabel,

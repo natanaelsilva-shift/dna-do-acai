@@ -19,6 +19,9 @@ yarn-error.log*
 pnpm-debug.log*
 next-dev*.log
 
+# local development data
+/local-data
+
 # env
 .env
 .env*.local

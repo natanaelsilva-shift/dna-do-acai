@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { AdminDashboard } from "@/components/AdminDashboard";
 import type { OrderRecord } from "@/data/orders";
-import { createClient } from "@/lib/supabase/server";
+import { listLocalOrders } from "@/lib/orders/local-store";
+import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 
 export const metadata: Metadata = {
   title: "Admin | DNA do Açaí",
@@ -12,6 +13,10 @@ export const dynamic = "force-dynamic";
 
 async function getInitialOrders() {
   try {
+    if (!isSupabaseConfigured()) {
+      return await listLocalOrders();
+    }
+
     const supabase = await createClient();
     const { data, error } = await supabase
       .from("orders")

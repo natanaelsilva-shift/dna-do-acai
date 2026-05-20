@@ -3,6 +3,7 @@
 import Link from "next/link";
 import {
   useCallback,
+  useEffect,
   useMemo,
   useState,
   useSyncExternalStore,
@@ -10,13 +11,14 @@ import {
 } from "react";
 import {
   CATALOG_STORAGE_KEY,
-  heroImage,
+  defaultProductImage,
   initialCatalog,
   type CatalogData,
   type Category,
   type ComplementGroup,
   type ComplementOption,
   type Product,
+  withCatalogProductImages,
 } from "@/data/menu";
 import {
   ORDER_STATUSES,
@@ -102,7 +104,7 @@ function parseCatalogSnapshot(snapshot: string) {
   }
 
   try {
-    return JSON.parse(snapshot) as CatalogData;
+    return withCatalogProductImages(JSON.parse(snapshot) as CatalogData);
   } catch {
     return initialCatalog;
   }
@@ -167,8 +169,10 @@ export function AdminDashboard({
     [catalog, orders.length],
   );
 
-  const loadOrders = useCallback(async () => {
-    setOrdersLoading(true);
+  const loadOrders = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) {
+      setOrdersLoading(true);
+    }
     setOrdersError("");
 
     try {
@@ -182,7 +186,15 @@ export function AdminDashboard({
         throw new Error(body.error ?? "Não foi possível carregar os pedidos.");
       }
 
-      setOrders(body.orders ?? []);
+      const nextOrders = body.orders ?? [];
+
+      setOrders(nextOrders);
+      setOrdersError("");
+      setStatus(
+        nextOrders.length > 0
+          ? `${nextOrders.length} pedido${nextOrders.length === 1 ? "" : "s"} carregado${nextOrders.length === 1 ? "" : "s"}.`
+          : "Nenhum pedido recebido ainda.",
+      );
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Não foi possível carregar os pedidos.";
@@ -190,9 +202,29 @@ export function AdminDashboard({
       setOrdersError(message);
       setStatus(message);
     } finally {
-      setOrdersLoading(false);
+      if (!silent) {
+        setOrdersLoading(false);
+      }
     }
   }, []);
+
+  useEffect(() => {
+    if (activeTab !== "orders") {
+      return;
+    }
+
+    const refreshTimeoutId = window.setTimeout(() => {
+      void loadOrders({ silent: true });
+    }, 0);
+    const intervalId = window.setInterval(() => {
+      void loadOrders({ silent: true });
+    }, 5000);
+
+    return () => {
+      window.clearTimeout(refreshTimeoutId);
+      window.clearInterval(intervalId);
+    };
+  }, [activeTab, loadOrders]);
 
   const updateOrderDeliveryFee = useCallback(
     async (orderId: string, deliveryFee: number) => {
@@ -356,8 +388,8 @@ export function AdminDashboard({
       price: 1990,
       serves: "300 ml",
       preparationTime: "10-20 min",
-      image: heroImage,
-      imagePosition: "50% 50%",
+      image: defaultProductImage,
+      imagePosition: "50% 46%",
       customizable: false,
     };
 
@@ -825,7 +857,7 @@ function OrdersPanel({
                   <div className="flex items-center justify-between text-[#526354]">
                     <span>Taxa de entrega</span>
                     <span>
-                      {order.delivery_fee > 0
+                      {order.delivery_fee && order.delivery_fee > 0
                         ? formatCurrency(order.delivery_fee)
                         : "A combinar"}
                     </span>
@@ -837,9 +869,23 @@ function OrdersPanel({
                       type="number"
                       step="0.01"
                       min="0"
-                      defaultValue={(order.delivery_fee / 100).toFixed(2)}
+                      defaultValue={
+                        order.delivery_fee !== null
+                          ? (order.delivery_fee / 100).toFixed(2)
+                          : ""
+                      }
                       onBlur={(e) => {
-                        const newFee = Math.round(parseFloat(e.target.value) * 100);
+                        if (!e.target.value.trim()) {
+                          return;
+                        }
+
+                        const parsedValue = Number(e.target.value.replace(",", "."));
+
+                        if (!Number.isFinite(parsedValue)) {
+                          return;
+                        }
+
+                        const newFee = Math.round(parsedValue * 100);
                         if (newFee !== order.delivery_fee) {
                           onUpdateDeliveryFee(order.id, newFee);
                         }
@@ -1004,7 +1050,7 @@ function ProductsPanel({
             />
 
             <TextField
-              label="URL da imagem"
+              label="Caminho da imagem"
               value={product.image}
               onChange={(value) => onUpdate(product.id, { image: value })}
             />
@@ -1057,7 +1103,7 @@ function ImagesPanel({
             className="grid gap-4 rounded-[8px] border border-[#d7a948]/30 p-4 lg:grid-cols-[160px_1fr]"
           >
             <div
-              className="min-h-36 rounded-[8px] bg-[#103d2c] bg-cover bg-center"
+              className="min-h-36 rounded-[8px] bg-[#f3ead2] bg-contain bg-center bg-no-repeat"
               style={{
                 backgroundImage: product.image ? `url(${product.image})` : undefined,
                 backgroundPosition: product.imagePosition,
@@ -1069,7 +1115,7 @@ function ImagesPanel({
                 <p className="text-sm text-[#526354]">{product.id}</p>
               </div>
               <TextField
-                label="URL da imagem"
+                label="Caminho da imagem"
                 value={product.image}
                 onChange={(value) => onUpdate(product.id, { image: value })}
               />

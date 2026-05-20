@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { isOrderStatus } from "@/data/orders";
-import { createClient } from "@/lib/supabase/server";
+import { isOrderStatus, type OrderStatus } from "@/data/orders";
+import { updateLocalOrder } from "@/lib/orders/local-store";
+import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 
 type RouteContext = {
   params: Promise<{
@@ -8,14 +9,23 @@ type RouteContext = {
   }>;
 };
 
+type OrderUpdateData = {
+  updated_at: string;
+  status?: string;
+  delivery_fee?: number;
+  total?: number;
+};
+
 export async function PATCH(request: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
     const body = (await request.json()) as { status?: unknown; delivery_fee?: unknown };
-    const status = typeof body.status === "string" ? body.status : undefined;
+    const statusValue = typeof body.status === "string" ? body.status : undefined;
+    const status: OrderStatus | undefined =
+      statusValue && isOrderStatus(statusValue) ? statusValue : undefined;
     const deliveryFee = typeof body.delivery_fee === "number" ? body.delivery_fee : undefined;
 
-    if (status && !isOrderStatus(status)) {
+    if (statusValue && !status) {
       return NextResponse.json({ error: "Status inválido." }, { status: 400 });
     }
 
@@ -23,13 +33,24 @@ export async function PATCH(request: Request, context: RouteContext) {
       return NextResponse.json({ error: "Taxa de entrega inválida." }, { status: 400 });
     }
 
-    const supabase = await createClient();
-
-    const updateData: any = { updated_at: new Date().toISOString() };
+    const updateData: OrderUpdateData = { updated_at: new Date().toISOString() };
     if (status) updateData.status = status;
     if (deliveryFee !== undefined) {
       updateData.delivery_fee = deliveryFee;
-      // Recalcular total se delivery_fee mudou
+    }
+
+    if (!isSupabaseConfigured()) {
+      const localOrder = await updateLocalOrder(id, {
+        status,
+        delivery_fee: deliveryFee,
+      });
+
+      return NextResponse.json({ order: localOrder, storage: "local" });
+    }
+
+    const supabase = await createClient();
+
+    if (deliveryFee !== undefined) {
       const order = await supabase.from("orders").select("subtotal").eq("id", id).single();
       if (order.data) {
         updateData.total = order.data.subtotal + deliveryFee;
