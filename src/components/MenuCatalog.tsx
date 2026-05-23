@@ -47,6 +47,10 @@ type CheckoutForm = {
 
 type SubmitState = "idle" | "submitting" | "success" | "error";
 
+const TURBINE_GROUP_ID = "turbine-seu-acai";
+const SPOON_NAPKIN_GROUP_ID = "colher-guardanapo";
+const DEFAULT_SPOON_NAPKIN_OPTION = "Sim, por favor.";
+
 const paymentLabels: Record<PaymentMethod, string> = {
   pix: "Pix",
   card: "Cartão na entrega",
@@ -72,6 +76,22 @@ const formatCurrency = (value: number) =>
 
 const formatOptionPrice = (value: number) =>
   value === 0 ? "Incluso" : `+ ${formatCurrency(value)}`;
+
+function isQuantityGroup(group: ComplementGroup) {
+  return group.id === TURBINE_GROUP_ID;
+}
+
+function getOptionQuantity(
+  selectedIds: string[],
+  optionId: string,
+  countRepeatedIds: boolean,
+) {
+  if (countRepeatedIds) {
+    return selectedIds.filter((selectedId) => selectedId === optionId).length;
+  }
+
+  return selectedIds.includes(optionId) ? 1 : 0;
+}
 
 function getDefaultSelections(complementGroups: ComplementGroup[]) {
   return complementGroups.reduce<SelectionState>((selections, group) => {
@@ -100,7 +120,8 @@ function getComplementGroupsForLimit(
 
     return {
       ...group,
-      description: `Escolha até ${complementLimit} complementos inclusos.`,
+      title: "Complementos grátis",
+      description: `Escolha até ${complementLimit} complementos grátis.`,
       maxSelections: complementLimit,
     };
   });
@@ -125,10 +146,38 @@ function isComboProduct(product: Product | null) {
   return Boolean(product?.comboCups?.length);
 }
 
-function getSelectedOptions(group: ComplementGroup, selections: SelectionState) {
+function getSelectedOptionEntries(
+  group: ComplementGroup,
+  selections: SelectionState,
+) {
   const selectedIds = selections[group.id] ?? [];
 
-  return group.options.filter((option) => selectedIds.includes(option.id));
+  return group.options
+    .map((option) => ({
+      option,
+      quantity: getOptionQuantity(selectedIds, option.id, isQuantityGroup(group)),
+    }))
+    .filter(({ quantity }) => quantity > 0);
+}
+
+function getGroupSelectionsPrice(
+  group: ComplementGroup,
+  selections: SelectionState,
+) {
+  return getSelectedOptionEntries(group, selections).reduce(
+    (total, { option, quantity }) => total + option.price * quantity,
+    0,
+  );
+}
+
+function getSelectionsPrice(
+  selections: SelectionState,
+  complementGroups: ComplementGroup[],
+) {
+  return complementGroups.reduce(
+    (total, group) => total + getGroupSelectionsPrice(group, selections),
+    0,
+  );
 }
 
 function calculateCustomizedPrice(
@@ -136,15 +185,70 @@ function calculateCustomizedPrice(
   selections: SelectionState,
   complementGroups: ComplementGroup[],
 ) {
-  return complementGroups.reduce((total, group) => {
-    const selectedOptions = getSelectedOptions(group, selections);
-    const groupTotal = selectedOptions.reduce(
-      (subtotal, option) => subtotal + option.price,
-      0,
-    );
+  return product.price + getSelectionsPrice(selections, complementGroups);
+}
 
-    return total + groupTotal;
+function calculateComboCustomizedPrice(
+  product: Product,
+  comboSelections: SelectionState[],
+  complementGroups: ComplementGroup[],
+) {
+  let customizableCupIndex = 0;
+
+  return (product.comboCups ?? []).reduce((total, cup) => {
+    if (cup.pure) {
+      return total;
+    }
+
+    const cupComplementGroups = getComplementGroupsForLimit(
+      cup.complementLimit,
+      complementGroups,
+    );
+    const cupSelections = comboSelections[customizableCupIndex] ?? {};
+    customizableCupIndex += 1;
+
+    return total + getSelectionsPrice(cupSelections, cupComplementGroups);
   }, product.price);
+}
+
+function formatCustomizationOption(
+  group: ComplementGroup,
+  option: ComplementOption,
+  quantity: number,
+) {
+  if (!isQuantityGroup(group)) {
+    return option.name;
+  }
+
+  const quantityPrefix = quantity > 1 ? `${quantity}x ` : "";
+
+  return `${quantityPrefix}${option.name} - ${formatCurrency(
+    option.price * quantity,
+  )}`;
+}
+
+function buildGroupCustomizationLine(
+  group: ComplementGroup,
+  selections: SelectionState,
+  emptyOptions?: string,
+): OrderCustomizationLine | null {
+  const selectedEntries = getSelectedOptionEntries(group, selections);
+
+  if (selectedEntries.length === 0 && !emptyOptions) {
+    return null;
+  }
+
+  const optionsList = selectedEntries.map(({ option, quantity }) =>
+    formatCustomizationOption(group, option, quantity),
+  );
+
+  return {
+    groupTitle: group.title,
+    options:
+      optionsList.length > 0 ? optionsList.join(", ") : emptyOptions ?? "",
+    optionsList: optionsList.length > 0 ? optionsList : undefined,
+    price: getGroupSelectionsPrice(group, selections),
+  };
 }
 
 function buildCustomizationLines(
@@ -153,18 +257,10 @@ function buildCustomizationLines(
 ) {
   return complementGroups
     .map<OrderCustomizationLine | null>((group) => {
-      const selectedOptions = getSelectedOptions(group, selections);
+      const defaultLabel =
+        group.id === SPOON_NAPKIN_GROUP_ID ? DEFAULT_SPOON_NAPKIN_OPTION : undefined;
 
-      if (selectedOptions.length === 0) {
-        return null;
-      }
-
-      return {
-        groupTitle: group.title,
-        options: selectedOptions.map((option) => option.name).join(", "),
-        optionsList: selectedOptions.map((option) => option.name),
-        price: selectedOptions.reduce((total, option) => total + option.price, 0),
-      };
+      return buildGroupCustomizationLine(group, selections, defaultLabel);
     })
     .filter((line): line is OrderCustomizationLine => Boolean(line));
 }
@@ -211,14 +307,22 @@ function buildComboCustomizationLines(
 ): OrderCustomizationLine[] {
   let customizableCupIndex = 0;
 
-  return (product.comboCups ?? []).map((cup) => {
+  return (product.comboCups ?? []).flatMap((cup) => {
     if (cup.pure) {
-      return {
-        groupTitle: cup.label,
-        options: "Açaí puro, sem complementos.",
-        optionsList: [],
-        price: 0,
-      };
+      return [
+        {
+          groupTitle: cup.label,
+          options: "Açaí puro, sem complementos.",
+          optionsList: [],
+          price: 0,
+        },
+        {
+          groupTitle: `${cup.label} - Deseja colher e guardanapo?`,
+          options: DEFAULT_SPOON_NAPKIN_OPTION,
+          optionsList: [DEFAULT_SPOON_NAPKIN_OPTION],
+          price: 0,
+        },
+      ];
     }
 
     const cupSelections = comboSelections[customizableCupIndex] ?? {};
@@ -226,20 +330,21 @@ function buildComboCustomizationLines(
       cup.complementLimit,
       complementGroups,
     );
-    const selectedOptions = cupComplementGroups.flatMap((group) =>
-      getSelectedOptions(group, cupSelections),
-    );
     customizableCupIndex += 1;
 
-    return {
-      groupTitle: cup.label,
-      options:
-        selectedOptions.length > 0
-          ? selectedOptions.map((option) => option.name).join(", ")
-          : "Sem complementos",
-      optionsList: selectedOptions.map((option) => option.name),
-      price: selectedOptions.reduce((total, option) => total + option.price, 0),
-    };
+    return cupComplementGroups
+      .map((group) =>
+        buildGroupCustomizationLine(
+          group,
+          cupSelections,
+          group.id === "complementos" ? "Sem complementos grátis." : undefined,
+        ),
+      )
+      .filter((line): line is OrderCustomizationLine => Boolean(line))
+      .map((line) => ({
+        ...line,
+        groupTitle: `${cup.label} - ${line.groupTitle}`,
+      }));
   });
 }
 
@@ -316,6 +421,16 @@ export function MenuCatalog() {
     () => getPureComboCups(customizingProduct),
     [customizingProduct],
   );
+  const activeComboSelections = useMemo(() => {
+    if (!customizingProduct || !isComboProduct(customizingProduct)) {
+      return comboSelections;
+    }
+
+    const nextSelections = [...comboSelections];
+    nextSelections[comboStepIndex] = selections;
+
+    return nextSelections;
+  }, [comboSelections, comboStepIndex, customizingProduct, selections]);
 
   const visibleProducts = useMemo(() => {
     if (activeCategory === "todos") {
@@ -338,7 +453,13 @@ export function MenuCatalog() {
     (checkout.deliveryMethod === "pickup" || checkout.address.trim().length > 0);
 
   const customizedPrice = customizingProduct
-    ? calculateCustomizedPrice(customizingProduct, selections, activeComplementGroups)
+    ? isComboProduct(customizingProduct)
+      ? calculateComboCustomizedPrice(
+          customizingProduct,
+          activeComboSelections,
+          complementGroups,
+        )
+      : calculateCustomizedPrice(customizingProduct, selections, activeComplementGroups)
     : 0;
 
   const isCustomizationValid = activeComplementGroups.every((group) => {
@@ -471,6 +592,11 @@ export function MenuCatalog() {
         nextComboSelections,
         complementGroups,
       );
+      const unitPrice = calculateComboCustomizedPrice(
+        customizingProduct,
+        nextComboSelections,
+        complementGroups,
+      );
 
       setCart((currentCart) => {
         const currentItem = currentCart[itemId];
@@ -484,7 +610,7 @@ export function MenuCatalog() {
             image: customizingProduct.image,
             imagePosition: customizingProduct.imagePosition,
             quantity: (currentItem?.quantity ?? 0) + 1,
-            unitPrice: customizingProduct.price,
+            unitPrice,
             customization,
           },
         };
@@ -721,6 +847,38 @@ export function MenuCatalog() {
     });
   }
 
+  function incrementOptionQuantity(group: ComplementGroup, optionId: string) {
+    setSelections((currentSelections) => {
+      const selectedIds = currentSelections[group.id] ?? [];
+      setCustomizationError("");
+
+      return {
+        ...currentSelections,
+        [group.id]: [...selectedIds, optionId],
+      };
+    });
+  }
+
+  function decrementOptionQuantity(group: ComplementGroup, optionId: string) {
+    setSelections((currentSelections) => {
+      const selectedIds = currentSelections[group.id] ?? [];
+      const optionIndex = selectedIds.lastIndexOf(optionId);
+
+      if (optionIndex === -1) {
+        return currentSelections;
+      }
+
+      const nextSelectedIds = [...selectedIds];
+      nextSelectedIds.splice(optionIndex, 1);
+      setCustomizationError("");
+
+      return {
+        ...currentSelections,
+        [group.id]: nextSelectedIds,
+      };
+    });
+  }
+
   function updateCheckoutField<Key extends keyof CheckoutForm>(
     field: Key,
     value: CheckoutForm[Key],
@@ -895,6 +1053,8 @@ export function MenuCatalog() {
           onBack={comboStepIndex > 0 ? goToPreviousComboCup : undefined}
           onClose={closeCustomizer}
           onConfirm={confirmCustomization}
+          onDecrementOption={decrementOptionQuantity}
+          onIncrementOption={incrementOptionQuantity}
           onReset={resetCurrentCustomization}
           onToggleOption={toggleOption}
         />
@@ -1228,6 +1388,11 @@ function CustomizationSummary({
           ) : (
             <p className="mt-1 text-xs leading-5 text-[#526354]">{line.options}</p>
           )}
+          {line.price > 0 ? (
+            <p className="mt-1 text-xs font-semibold text-[#4b164c]">
+              Extras: {formatCurrency(line.price)}
+            </p>
+          ) : null}
         </div>
       ))}
     </div>
@@ -1570,6 +1735,8 @@ function CupCustomizer({
   onBack,
   onClose,
   onConfirm,
+  onDecrementOption,
+  onIncrementOption,
   onReset,
   onToggleOption,
 }: {
@@ -1587,6 +1754,8 @@ function CupCustomizer({
   onBack?: () => void;
   onClose: () => void;
   onConfirm: () => void;
+  onDecrementOption: (group: ComplementGroup, optionId: string) => void;
+  onIncrementOption: (group: ComplementGroup, optionId: string) => void;
   onReset: () => void;
   onToggleOption: (group: ComplementGroup, optionId: string) => void;
 }) {
@@ -1650,6 +1819,8 @@ function CupCustomizer({
                 key={group.id}
                 group={group}
                 selectedIds={selections[group.id] ?? []}
+                onDecrement={(optionId) => onDecrementOption(group, optionId)}
+                onIncrement={(optionId) => onIncrementOption(group, optionId)}
                 onToggle={(optionId) => onToggleOption(group, optionId)}
               />
             ))}
@@ -1714,13 +1885,19 @@ function CupCustomizer({
 
 function ComplementGroupSelector({
   group,
+  onDecrement,
+  onIncrement,
   selectedIds,
   onToggle,
 }: {
   group: ComplementGroup;
+  onDecrement: (optionId: string) => void;
+  onIncrement: (optionId: string) => void;
   selectedIds: string[];
   onToggle: (optionId: string) => void;
 }) {
+  const usesQuantity = isQuantityGroup(group);
+
   return (
     <section className="rounded-[8px] border border-[#d7a948]/30 bg-white p-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -1739,12 +1916,25 @@ function ComplementGroupSelector({
 
       <div className="mt-4 grid gap-2">
         {group.options.map((option) => {
-          const isSelected = selectedIds.includes(option.id);
+          const quantity = getOptionQuantity(selectedIds, option.id, usesQuantity);
+          const isSelected = quantity > 0;
           const maxReached =
             group.type === "multiple" &&
             group.maxSelections !== undefined &&
             selectedIds.length >= group.maxSelections &&
             !isSelected;
+
+          if (usesQuantity) {
+            return (
+              <ComplementQuantityOption
+                key={option.id}
+                option={option}
+                quantity={quantity}
+                onDecrement={() => onDecrement(option.id)}
+                onIncrement={() => onIncrement(option.id)}
+              />
+            );
+          }
 
           return (
             <ComplementOptionButton
@@ -1759,6 +1949,65 @@ function ComplementGroupSelector({
         })}
       </div>
     </section>
+  );
+}
+
+function ComplementQuantityOption({
+  option,
+  quantity,
+  onDecrement,
+  onIncrement,
+}: {
+  option: ComplementOption;
+  quantity: number;
+  onDecrement: () => void;
+  onIncrement: () => void;
+}) {
+  const selected = quantity > 0;
+
+  return (
+    <div
+      className={`grid min-h-16 gap-3 rounded-[8px] border px-3 py-3 transition sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center ${
+        selected
+          ? "border-[#103d2c] bg-[#f3ead2]"
+          : "border-[#d7a948]/25 bg-white"
+      }`}
+    >
+      <div className="min-w-0">
+        <p className="text-sm font-semibold text-[#103d2c]">{option.name}</p>
+        {option.description ? (
+          <p className="mt-1 text-xs leading-5 text-[#526354]">
+            {option.description}
+          </p>
+        ) : null}
+        <p className="mt-1 text-xs font-semibold text-[#4b164c]">
+          {formatOptionPrice(option.price)} cada
+        </p>
+      </div>
+
+      <div className="flex min-h-11 w-fit items-center border border-[#103d2c]/35 bg-white">
+        <button
+          type="button"
+          onClick={onDecrement}
+          disabled={quantity === 0}
+          className="grid size-11 place-items-center text-lg font-semibold text-[#103d2c] transition enabled:hover:bg-[#f3ead2] disabled:cursor-not-allowed disabled:opacity-35"
+          aria-label={`Diminuir ${option.name}`}
+        >
+          -
+        </button>
+        <span className="grid min-w-10 place-items-center text-sm font-semibold text-[#103d2c]">
+          {quantity}
+        </span>
+        <button
+          type="button"
+          onClick={onIncrement}
+          className="grid size-11 place-items-center bg-[#103d2c] text-lg font-semibold text-white transition hover:bg-[#4b164c]"
+          aria-label={`Adicionar ${option.name}`}
+        >
+          +
+        </button>
+      </div>
+    </div>
   );
 }
 

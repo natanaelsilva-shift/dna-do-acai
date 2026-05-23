@@ -389,7 +389,7 @@ export const products: Product[] = [
 export const cupComplementGroups: ComplementGroup[] = [
   {
     id: "complementos",
-    title: "Complementos",
+    title: "Complementos grátis",
     description: "Escolha seus complementos inclusos.",
     required: false,
     type: "multiple",
@@ -423,6 +423,66 @@ export const cupComplementGroups: ComplementGroup[] = [
       {
         id: "pacoca",
         name: "Paçoca",
+        price: 0,
+      },
+    ],
+  },
+  {
+    id: "turbine-seu-acai",
+    title: "Turbine seu açaí",
+    description: "Adicione extras ao seu copo.",
+    required: false,
+    type: "multiple",
+    options: [
+      {
+        id: "leite-ninho-extra",
+        name: "Leite Ninho extra",
+        price: 200,
+      },
+      {
+        id: "granola-extra",
+        name: "Granola extra",
+        price: 200,
+      },
+      {
+        id: "morango-extra",
+        name: "Morango extra",
+        price: 250,
+      },
+      {
+        id: "banana-extra",
+        name: "Banana extra",
+        price: 200,
+      },
+      {
+        id: "leite-condensado-extra",
+        name: "Leite condensado extra",
+        price: 250,
+      },
+      {
+        id: "pacoca-extra",
+        name: "Paçoca extra",
+        price: 200,
+      },
+    ],
+  },
+  {
+    id: "colher-guardanapo",
+    title: "Deseja colher e guardanapo?",
+    description: "Escolha uma opção para acompanhar seu pedido.",
+    required: true,
+    type: "single",
+    minSelections: 1,
+    maxSelections: 1,
+    options: [
+      {
+        id: "sim-colher-guardanapo",
+        name: "Sim, por favor.",
+        price: 0,
+      },
+      {
+        id: "nao-colher-guardanapo",
+        name: "Não, obrigado.",
         price: 0,
       },
     ],

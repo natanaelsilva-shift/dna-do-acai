@@ -20,8 +20,12 @@ function buildOrderMessagePreview(order: CreateOrderPayload) {
             line.optionsList && line.optionsList.length > 0
               ? line.optionsList.map((option) => `      * ${option}`).join("\n")
               : `      ${line.options}`;
+          const sectionTotal =
+            line.price > 0 ? `      Total da seção: ${formatCurrency(line.price)}` : "";
 
-          return `   ${line.groupTitle}:\n${options}`;
+          return [`   ${line.groupTitle}:`, options, sectionTotal]
+            .filter(Boolean)
+            .join("\n");
         })
         .join("\n");
 
