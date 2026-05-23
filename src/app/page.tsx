@@ -1,6 +1,6 @@
 import Image from "next/image";
 import { MenuCatalog } from "@/components/MenuCatalog";
-import { categories } from "@/data/menu";
+import { categories, productImages } from "@/data/menu";
 
 const aboutFeatures = [
   {
@@ -32,17 +32,17 @@ const homeImages = {
     position: "50% 45%",
   },
   heroCenter: {
-    src: "/images/dna-supremo.avif",
+    src: productImages.dnaSupremo,
     alt: "DNA Supremo da DNA do Açaí",
     position: "50% 46%",
   },
   heroRight: {
-    src: "/images/dna-explosao.avif",
+    src: productImages.dnaExplosao,
     alt: "DNA Explosão da DNA do Açaí",
     position: "50% 46%",
   },
   about: {
-    src: "/images/copo-de-500.jpeg",
+    src: productImages.dnaSupremo,
     alt: "Copo de 500ml da DNA do Açaí",
     position: "50% 44%",
   },
@@ -214,15 +214,17 @@ export default function Home() {
             <p className="w-fit rounded-[8px] border border-[#d7a948]/35 bg-white/[0.06] px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#f8e8b5] backdrop-blur md:text-sm md:tracking-[0.2em]">
               Bem-vindo ao sabor DNA
             </p>
-            <h1 className="mt-5 max-w-3xl text-4xl font-semibold leading-[1.05] text-white min-[390px]:text-5xl md:text-6xl lg:text-7xl">
-              Obrigado por visitar a{" "}
+            <h1 className="mt-5 max-w-3xl text-4xl font-semibold leading-[1.06] text-white sm:text-5xl md:text-6xl lg:text-7xl">
+              <span className="block sm:inline">Obrigado por</span>{" "}
+              <span className="block sm:inline">visitar a</span>{" "}
               <span className="text-[#f8e8b5] drop-shadow-[0_10px_24px_rgba(215,169,72,0.24)]">
                 DNA do Açaí
               </span>{" "}
               <span aria-hidden="true">💜</span>
             </h1>
             <p className="mt-5 max-w-xl text-base font-medium leading-7 text-white/88 md:mt-6 md:text-xl md:leading-8">
-              Monte seu pedido e aproveite uma experiência cheia de sabor!
+              <span className="block sm:inline">Monte seu pedido e aproveite uma</span>{" "}
+              <span className="block sm:inline">experiência cheia de sabor!</span>
             </p>
 
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
@@ -242,40 +244,40 @@ export default function Home() {
           </div>
 
           <div className="order-1 motion-safe:[animation:dna-about-fade_900ms_ease-out_120ms_both] lg:order-2">
-            <div className="relative mx-auto h-[320px] w-full max-w-[640px] sm:h-[410px] lg:h-[570px]">
+            <div className="relative mx-auto h-[300px] w-full max-w-[620px] sm:h-[390px] lg:h-[540px]">
               <div className="absolute inset-x-8 bottom-2 h-24 rounded-[8px] bg-[#020806]/45 blur-xl" />
               <div className="absolute inset-0 rounded-[8px] border border-[#d7a948]/22 bg-[linear-gradient(160deg,rgba(255,250,240,0.08)_0%,rgba(255,255,255,0.02)_46%,rgba(75,22,76,0.16)_100%)] shadow-[0_30px_90px_rgba(0,0,0,0.28)] backdrop-blur-[1px]" />
 
-              <div className="absolute bottom-8 left-[4%] h-[62%] w-[34%] -rotate-6 opacity-95 transition duration-500 hover:-translate-y-1 hover:scale-[1.03] sm:bottom-10">
+              <div className="absolute bottom-12 left-[7%] h-[48%] w-[27%] -rotate-6 opacity-95 transition duration-500 hover:-translate-y-1 hover:scale-[1.03] sm:bottom-14 sm:left-[8%] sm:h-[52%] sm:w-[28%] lg:bottom-16">
                 <Image
                   src={homeImages.heroLeft.src}
                   alt={homeImages.heroLeft.alt}
                   fill
-                  sizes="(max-width: 1024px) 34vw, 210px"
-                  className="object-contain p-1 drop-shadow-[0_24px_32px_rgba(0,0,0,0.42)]"
+                  sizes="(max-width: 1024px) 28vw, 170px"
+                  className="object-contain p-2 drop-shadow-[0_22px_30px_rgba(0,0,0,0.38)] sm:p-3"
                   style={{ objectPosition: homeImages.heroLeft.position }}
                 />
               </div>
 
-              <div className="absolute bottom-3 left-1/2 h-[92%] w-[50%] -translate-x-1/2 transition duration-500 hover:-translate-y-1 hover:scale-[1.03]">
+              <div className="absolute bottom-8 left-1/2 h-[72%] w-[38%] -translate-x-1/2 transition duration-500 hover:-translate-y-1 hover:scale-[1.03] sm:bottom-9 sm:h-[76%] sm:w-[40%] lg:bottom-11">
                 <Image
                   src={homeImages.heroCenter.src}
                   alt={homeImages.heroCenter.alt}
                   fill
                   loading="eager"
-                  sizes="(max-width: 1024px) 54vw, 330px"
-                  className="object-contain p-1 drop-shadow-[0_34px_44px_rgba(0,0,0,0.48)]"
+                  sizes="(max-width: 1024px) 42vw, 260px"
+                  className="object-contain p-2 drop-shadow-[0_30px_40px_rgba(0,0,0,0.44)] sm:p-3"
                   style={{ objectPosition: homeImages.heroCenter.position }}
                 />
               </div>
 
-              <div className="absolute bottom-8 right-[3%] h-[72%] w-[36%] rotate-6 transition duration-500 hover:-translate-y-1 hover:scale-[1.03] sm:bottom-9">
+              <div className="absolute bottom-11 right-[7%] h-[56%] w-[29%] rotate-6 transition duration-500 hover:-translate-y-1 hover:scale-[1.03] sm:bottom-12 sm:right-[8%] sm:h-[60%] sm:w-[30%] lg:bottom-14">
                 <Image
                   src={homeImages.heroRight.src}
                   alt={homeImages.heroRight.alt}
                   fill
-                  sizes="(max-width: 1024px) 36vw, 230px"
-                  className="object-contain p-1 drop-shadow-[0_28px_38px_rgba(0,0,0,0.44)]"
+                  sizes="(max-width: 1024px) 30vw, 190px"
+                  className="object-contain p-2 drop-shadow-[0_25px_34px_rgba(0,0,0,0.4)] sm:p-3"
                   style={{ objectPosition: homeImages.heroRight.position }}
                 />
               </div>

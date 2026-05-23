@@ -56,10 +56,12 @@ export type CatalogData = {
 export const CATALOG_STORAGE_KEY = "dna-do-acai-catalog-v3";
 
 export const productImages = {
-  dnaExplosao: "/images/dna-explosao.avif",
-  dnaSupremo: "/images/dna-supremo.avif",
+  dnaExplosao: "/images/Copo de 300ml.jpeg",
+  dnaSupremo: "/images/copo-de-500.jpeg",
+  dnaExtraSupremo: "/images/Copo de 700.webp",
   acaiPuro300: "/images/acai-puro-300.jpg",
   acaiPuro500: "/images/acai-puro-500.avif",
+  acaiPuro700: "/images/Açai puro de 700.jpg",
 } as const;
 
 export const defaultProductImage = productImages.dnaExplosao;
@@ -84,11 +86,11 @@ export const productImageDefaults: Record<string, ProductImageDefaults> = {
     imagePosition: "50% 46%",
   },
   "dna-extra-supremo-700ml": {
-    image: productImages.dnaSupremo,
+    image: productImages.dnaExtraSupremo,
     imagePosition: "50% 46%",
   },
   "copo-acai-puro-700ml": {
-    image: productImages.acaiPuro500,
+    image: productImages.acaiPuro700,
     imagePosition: "50% 46%",
   },
   "combo-supremo-dna": {
@@ -214,7 +216,7 @@ export const products: Product[] = [
     description:
       "Açaí de 700ml super cremoso, montado do seu jeito com até 5 complementos. O tamanho perfeito pra quem ama um copão bem servido e cheio de sabor!",
     price: 2699,
-    image: productImages.dnaSupremo,
+    image: productImages.dnaExtraSupremo,
     imagePosition: "50% 46%",
     customizable: true,
     complementLimit: 5,
@@ -246,7 +248,7 @@ export const products: Product[] = [
     description:
       "Açaí puro em tamanho gigante, super cremoso e bem servido. Simples, natural e perfeito pra quem ama o verdadeiro sabor do açaí!",
     price: 1899,
-    image: productImages.acaiPuro500,
+    image: productImages.acaiPuro700,
     imagePosition: "50% 46%",
   },
   {

@@ -1078,10 +1078,14 @@ function ProductCard({
 
   return (
     <article
-      className={`grid min-h-40 grid-cols-1 gap-3 rounded-[8px] border border-[#d7a948]/30 bg-white p-3 shadow-[0_12px_34px_rgba(16,61,44,0.06)] transition hover:border-[#d7a948] hover:shadow-[0_18px_46px_rgba(16,61,44,0.12)] sm:gap-4 sm:p-4 ${
+      className={`grid min-h-40 grid-cols-1 gap-3 rounded-[8px] border bg-white p-3 shadow-[0_12px_34px_rgba(16,61,44,0.06)] transition hover:border-[#d7a948] hover:shadow-[0_18px_46px_rgba(16,61,44,0.12)] sm:gap-4 sm:p-4 ${
         showProductImage
           ? "min-[430px]:grid-cols-[minmax(0,1fr)_136px] md:grid-cols-[minmax(0,1fr)_148px]"
           : ""
+      } ${
+        productIsCombo
+          ? "border-[#d7a948]/45 bg-[linear-gradient(180deg,#ffffff_0%,#fffaf0_100%)]"
+          : "border-[#d7a948]/30"
       }`}
     >
       <div className="flex min-w-0 flex-col">
@@ -1108,7 +1112,13 @@ function ProductCard({
         <h4 className="mt-3 text-base font-semibold leading-snug text-[#103d2c] sm:text-lg">
           {product.name}
         </h4>
-        <p className="mt-2 line-clamp-2 text-sm leading-6 text-[#526354]">
+        <p
+          className={`mt-2 text-sm leading-6 ${
+            productIsCombo
+              ? "font-medium text-[#405548]"
+              : "line-clamp-2 text-[#526354]"
+          }`}
+        >
           {product.description}
         </p>
 
@@ -1119,7 +1129,11 @@ function ProductCard({
                 {formatCurrency(product.originalPrice)}
               </p>
             ) : null}
-            <p className="text-lg font-semibold text-[#4b164c]">
+            <p
+              className={`font-semibold text-[#4b164c] ${
+                productIsCombo ? "text-xl sm:text-2xl" : "text-lg"
+              }`}
+            >
               {formatCurrency(product.price)}
             </p>
             {product.customizable && quantity > 0 ? (
