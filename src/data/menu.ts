@@ -24,7 +24,7 @@ export type Product = {
 export type ComboCup = {
   id: string;
   label: string;
-  size: "300ml" | "500ml";
+  size: "300ml" | "500ml" | "700ml";
   complementLimit?: number;
   pure?: boolean;
 };
@@ -83,6 +83,14 @@ export const productImageDefaults: Record<string, ProductImageDefaults> = {
     image: productImages.acaiPuro500,
     imagePosition: "50% 46%",
   },
+  "dna-extra-supremo-700ml": {
+    image: productImages.dnaSupremo,
+    imagePosition: "50% 46%",
+  },
+  "copo-acai-puro-700ml": {
+    image: productImages.acaiPuro500,
+    imagePosition: "50% 46%",
+  },
   "combo-supremo-dna": {
     image: "",
     imagePosition: "50% 50%",
@@ -99,14 +107,43 @@ export const productImageDefaults: Record<string, ProductImageDefaults> = {
     image: "",
     imagePosition: "50% 50%",
   },
+  "combo-dna-gigante": {
+    image: "",
+    imagePosition: "50% 50%",
+  },
 };
 
 const isLocalProductImage = (image: string) => image.startsWith("/images/");
 
 export function withCatalogProductImages(catalog: CatalogData): CatalogData {
-  return {
+  const existingCategoryIds = new Set(
+    catalog.categories.map((category) => category.id),
+  );
+  const existingProductIds = new Set(catalog.products.map((product) => product.id));
+  const existingComplementGroupIds = new Set(
+    catalog.complementGroups.map((group) => group.id),
+  );
+  const normalizedCatalog: CatalogData = {
     ...catalog,
-    products: catalog.products.map((product) => {
+    categories: [
+      ...catalog.categories,
+      ...categories.filter((category) => !existingCategoryIds.has(category.id)),
+    ],
+    products: [
+      ...catalog.products,
+      ...products.filter((product) => !existingProductIds.has(product.id)),
+    ],
+    complementGroups: [
+      ...catalog.complementGroups,
+      ...cupComplementGroups.filter(
+        (group) => !existingComplementGroupIds.has(group.id),
+      ),
+    ],
+  };
+
+  return {
+    ...normalizedCatalog,
+    products: normalizedCatalog.products.map((product) => {
       const defaults = productImageDefaults[product.id];
 
       if (defaults) {
@@ -171,6 +208,18 @@ export const products: Product[] = [
     complementLimit: 4,
   },
   {
+    id: "dna-extra-supremo-700ml",
+    categoryId: "monte-seu-acai",
+    name: "Dna Extra Supremo (700ml)",
+    description:
+      "Açaí de 700ml super cremoso, montado do seu jeito com até 5 complementos. O tamanho perfeito pra quem ama um copão bem servido e cheio de sabor!",
+    price: 2699,
+    image: productImages.dnaSupremo,
+    imagePosition: "50% 46%",
+    customizable: true,
+    complementLimit: 5,
+  },
+  {
     id: "copo-acai-puro-300ml",
     categoryId: "acai-puro",
     name: "Copo de Açaí Puro (300ml)",
@@ -187,6 +236,16 @@ export const products: Product[] = [
     description:
       "Açaí puro em tamanho maior, bem servido e super cremoso.",
     price: 1499,
+    image: productImages.acaiPuro500,
+    imagePosition: "50% 46%",
+  },
+  {
+    id: "copo-acai-puro-700ml",
+    categoryId: "acai-puro",
+    name: "Copo de Açaí Puro (700ml)",
+    description:
+      "Açaí puro em tamanho gigante, super cremoso e bem servido. Simples, natural e perfeito pra quem ama o verdadeiro sabor do açaí!",
+    price: 1899,
     image: productImages.acaiPuro500,
     imagePosition: "50% 46%",
   },
@@ -211,6 +270,31 @@ export const products: Product[] = [
         label: "2º Copo 500ml",
         size: "500ml",
         complementLimit: 4,
+      },
+    ],
+  },
+  {
+    id: "combo-dna-gigante",
+    categoryId: "combos",
+    name: "Combo Dna Gigante",
+    description:
+      "2 copões de 700ml com até 5 complementos cada. Muito mais recheio, muito mais sabor e perfeito pra compartilhar!",
+    price: 4999,
+    image: "",
+    imagePosition: "50% 50%",
+    customizable: true,
+    comboCups: [
+      {
+        id: "copo-1-700ml",
+        label: "1º Copo 700ml",
+        size: "700ml",
+        complementLimit: 5,
+      },
+      {
+        id: "copo-2-700ml",
+        label: "2º Copo 700ml",
+        size: "700ml",
+        complementLimit: 5,
       },
     ],
   },
