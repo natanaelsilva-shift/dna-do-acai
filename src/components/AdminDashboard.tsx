@@ -34,12 +34,17 @@ import {
 
 type AdminTab = "orders" | "products" | "images" | "categories" | "complements";
 
-const tabs: { id: AdminTab; label: string }[] = [
-  { id: "orders", label: "Pedidos" },
-  { id: "products", label: "Produtos" },
-  { id: "images", label: "Imagens" },
-  { id: "categories", label: "Categorias" },
-  { id: "complements", label: "Complementos" },
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+};
+
+const tabs: { id: AdminTab; label: string; shortLabel: string }[] = [
+  { id: "orders", label: "Pedidos", shortLabel: "Pedidos" },
+  { id: "products", label: "Produtos", shortLabel: "Produtos" },
+  { id: "images", label: "Imagens", shortLabel: "Imagens" },
+  { id: "categories", label: "Categorias", shortLabel: "Categ." },
+  { id: "complements", label: "Complementos", shortLabel: "Compl." },
 ];
 
 const ORDER_SOUND_SRC = "/sounds/novo-pedido.mp3";
@@ -58,6 +63,32 @@ const formatDateTime = (value: string) =>
 
 const formatOrderNumber = (orderNumber: number) =>
   `#${orderNumber.toString().padStart(4, "0")}`;
+
+const getOrderStatusClassName = (status: OrderStatus) => {
+  switch (status) {
+    case "Novo":
+      return "border-[#d97706] bg-[#fff7ed] text-[#9a3412]";
+    case "Em preparo":
+      return "border-[#7c3aed] bg-[#f5f3ff] text-[#5b21b6]";
+    case "Saiu para entrega":
+      return "border-[#0284c7] bg-[#f0f9ff] text-[#075985]";
+    case "Finalizado":
+      return "border-[#16a34a] bg-[#f0fdf4] text-[#166534]";
+    case "Cancelado":
+      return "border-[#dc2626] bg-[#fef2f2] text-[#991b1b]";
+    default:
+      return "border-[#d7a948] bg-[#fffaf0] text-[#103d2c]";
+  }
+};
+
+const isStandaloneAdminApp = () => {
+  const nav = window.navigator as Navigator & { standalone?: boolean };
+
+  return (
+    window.matchMedia("(display-mode: standalone)").matches ||
+    Boolean(nav.standalone)
+  );
+};
 
 const centsToInput = (value?: number) => ((value ?? 0) / 100).toFixed(2);
 
@@ -147,6 +178,9 @@ export function AdminDashboard({
   const [status, setStatus] = useState("Catálogo carregado para edição.");
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [soundError, setSoundError] = useState("");
+  const [installPrompt, setInstallPrompt] =
+    useState<BeforeInstallPromptEvent | null>(null);
+  const [isAdminAppInstalled, setIsAdminAppInstalled] = useState(false);
   const [notification, setNotification] = useState<{
     order: OrderRecord;
     visible: boolean;
@@ -203,6 +237,64 @@ export function AdminDashboard({
   useEffect(() => {
     soundEnabledRef.current = soundEnabled;
   }, [soundEnabled]);
+
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) {
+      return;
+    }
+
+    const registerServiceWorker = () => {
+      navigator.serviceWorker
+        .register("/sw.js", { scope: "/admin/" })
+        .catch((error) => {
+          console.log("Erro ao registrar service worker", error);
+        });
+    };
+
+    if (document.readyState === "complete") {
+      registerServiceWorker();
+      return;
+    }
+
+    window.addEventListener("load", registerServiceWorker);
+
+    return () => {
+      window.removeEventListener("load", registerServiceWorker);
+    };
+  }, []);
+
+  useEffect(() => {
+    const standaloneQuery = window.matchMedia("(display-mode: standalone)");
+
+    const updateInstalledState = () => {
+      setIsAdminAppInstalled(isStandaloneAdminApp());
+    };
+
+    const handleBeforeInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as BeforeInstallPromptEvent);
+    };
+
+    const handleAppInstalled = () => {
+      setInstallPrompt(null);
+      setIsAdminAppInstalled(true);
+      setStatus("Painel admin instalado no celular.");
+    };
+
+    updateInstalledState();
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    window.addEventListener("appinstalled", handleAppInstalled);
+    standaloneQuery.addEventListener("change", updateInstalledState);
+
+    return () => {
+      window.removeEventListener(
+        "beforeinstallprompt",
+        handleBeforeInstallPrompt,
+      );
+      window.removeEventListener("appinstalled", handleAppInstalled);
+      standaloneQuery.removeEventListener("change", updateInstalledState);
+    };
+  }, []);
 
   useEffect(() => {
     const saved = window.localStorage.getItem("dna-admin-order-sound-enabled");
@@ -265,6 +357,35 @@ export function AdminDashboard({
     await playOrderSound();
   }, [playOrderSound]);
 
+  const installAdminPwa = useCallback(async () => {
+    if (isAdminAppInstalled) {
+      setStatus("Painel admin ja esta instalado no celular.");
+      return;
+    }
+
+    if (!installPrompt) {
+      setStatus(
+        "Instalacao ainda nao disponivel. No celular, use Adicionar a tela inicial se o navegador mostrar essa opcao.",
+      );
+      return;
+    }
+
+    try {
+      await installPrompt.prompt();
+      const choice = await installPrompt.userChoice;
+
+      setInstallPrompt(null);
+      setStatus(
+        choice.outcome === "accepted"
+          ? "Instalacao do painel admin iniciada."
+          : "Instalacao do painel admin cancelada.",
+      );
+    } catch (error) {
+      console.log("Erro ao abrir instalacao do PWA", error);
+      setStatus("Nao foi possivel abrir a instalacao agora.");
+    }
+  }, [installPrompt, isAdminAppInstalled]);
+
   const playNewOrderSound = useCallback(async () => {
     if (!soundEnabledRef.current) {
       return;
@@ -282,6 +403,9 @@ export function AdminDashboard({
       setHighlightedOrderId(order.id);
       setNotification({ order, visible: true });
       setStatus(`Novo pedido recebido! ${formatOrderNumber(order.order_number)}.`);
+      if (typeof navigator.vibrate === "function") {
+        navigator.vibrate(500);
+      }
       console.log("Novo pedido detectado");
       void playNewOrderSound();
     },
@@ -796,41 +920,43 @@ export function AdminDashboard({
   }
 
   return (
-    <main className="min-h-screen bg-[#f6f1e5] text-[#16221a]">
-      <header className="border-b border-[#d7a948]/35 bg-[#103d2c] px-5 py-5 text-white md:px-8">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+    <main className="min-h-screen bg-[#f6f1e5] pb-24 text-[#16221a] lg:pb-0">
+      <header className="sticky top-0 z-40 border-b border-[#d7a948]/35 bg-[#103d2c] px-4 py-3 text-white shadow-[0_12px_30px_rgba(7,27,18,0.18)] md:px-8 md:py-5">
+        <div className="mx-auto flex max-w-7xl flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#d7a948]">
               DNA do Açaí
             </p>
-            <h1 className="mt-2 text-3xl font-semibold">Painel administrativo</h1>
+            <h1 className="mt-1 text-2xl font-semibold md:text-3xl">
+              Painel administrativo
+            </h1>
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="-mx-1 flex flex-nowrap gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:overflow-visible sm:pb-0">
             <Link
               href="/"
-              className="inline-flex min-h-11 items-center border border-white/30 px-4 text-sm font-semibold text-white transition hover:border-[#d7a948] hover:text-[#f8e8b5]"
+              className="inline-flex min-h-11 shrink-0 items-center border border-white/30 px-4 text-sm font-semibold text-white transition hover:border-[#d7a948] hover:text-[#f8e8b5]"
             >
               Ver loja
             </Link>
             <button
               type="button"
               onClick={exportCatalog}
-              className="min-h-11 border border-[#d7a948] px-4 text-sm font-semibold text-[#f8e8b5] transition hover:bg-[#d7a948] hover:text-[#103d2c]"
+              className="min-h-11 shrink-0 border border-[#d7a948] px-4 text-sm font-semibold text-[#f8e8b5] transition hover:bg-[#d7a948] hover:text-[#103d2c]"
             >
               Exportar JSON
             </button>
             <button
               type="button"
               onClick={resetCatalog}
-              className="min-h-11 border border-white/30 px-4 text-sm font-semibold text-white transition hover:border-[#d7a948] hover:text-[#f8e8b5]"
+              className="min-h-11 shrink-0 border border-white/30 px-4 text-sm font-semibold text-white transition hover:border-[#d7a948] hover:text-[#f8e8b5]"
             >
               Restaurar
             </button>
             <button
               type="button"
               onClick={publishCatalog}
-              className="min-h-11 border border-[#d7a948] bg-[#d7a948] px-5 text-sm font-semibold text-[#103d2c] transition hover:bg-[#f1cf77]"
+              className="min-h-11 shrink-0 border border-[#d7a948] bg-[#d7a948] px-5 text-sm font-semibold text-[#103d2c] transition hover:bg-[#f1cf77]"
             >
               Publicar catálogo
             </button>
@@ -838,8 +964,8 @@ export function AdminDashboard({
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-7xl gap-6 px-5 py-6 md:px-8 lg:grid-cols-[260px_1fr]">
-        <aside className="space-y-4">
+      <div className="mx-auto grid max-w-7xl gap-5 px-4 py-4 md:px-8 md:py-6 lg:grid-cols-[260px_1fr]">
+        <aside className="space-y-4 lg:sticky lg:top-32 lg:self-start">
           <div className="rounded-[8px] border border-[#d7a948]/35 bg-white p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#4b164c]">
               Status
@@ -847,7 +973,7 @@ export function AdminDashboard({
             <p className="mt-2 text-sm leading-6 text-[#526354]">{status}</p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-1">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-1">
             {stats.map((stat) => (
               <div
                 key={stat.label}
@@ -861,7 +987,7 @@ export function AdminDashboard({
             ))}
           </div>
 
-          <nav className="grid gap-2 rounded-[8px] border border-[#d7a948]/35 bg-white p-2">
+          <nav className="hidden gap-2 rounded-[8px] border border-[#d7a948]/35 bg-white p-2 lg:grid">
             {tabs.map((tab) => {
               const badgeCount = tab.id === "orders" ? newOrdersCount : 0;
 
@@ -895,8 +1021,11 @@ export function AdminDashboard({
             <OrdersPanel
               error={ordersError}
               highlightedOrderId={highlightedOrderId}
+              installAvailable={Boolean(installPrompt)}
+              isAdminAppInstalled={isAdminAppInstalled}
               loading={ordersLoading}
               orders={orders}
+              onInstallAdminApp={() => void installAdminPwa()}
               onRefresh={loadOrders}
               onUpdateStatus={updateOrderStatus}
               onUpdateDeliveryFee={updateOrderDeliveryFee}
@@ -953,6 +1082,34 @@ export function AdminDashboard({
         </section>
         {notification?.visible ? <NotificationToast /> : null}
       </div>
+
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[#d7a948]/35 bg-white/95 px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 shadow-[0_-12px_30px_rgba(7,27,18,0.14)] backdrop-blur lg:hidden">
+        <div className="mx-auto grid max-w-7xl grid-cols-5 gap-1">
+          {tabs.map((tab) => {
+            const badgeCount = tab.id === "orders" ? newOrdersCount : 0;
+
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`relative flex min-h-14 flex-col items-center justify-center rounded-[8px] px-1 text-center text-[11px] font-semibold transition ${
+                  activeTab === tab.id
+                    ? "bg-[#103d2c] text-white"
+                    : "text-[#103d2c] hover:bg-[#f3ead2]"
+                }`}
+              >
+                <span>{tab.shortLabel}</span>
+                {badgeCount > 0 ? (
+                  <span className="absolute right-1 top-1 min-w-5 rounded-full bg-[#d7a948] px-1 text-[10px] leading-5 text-[#103d2c]">
+                    {badgeCount}
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+      </nav>
     </main>
   );
 
@@ -964,7 +1121,10 @@ export function AdminDashboard({
     const newestOrder = notification.order;
 
     return (
-      <div className="fixed right-4 top-4 z-50 w-[min(26rem,calc(100vw-2rem)))] rounded-[16px] border border-[#d7a948]/40 bg-white p-4 shadow-[0_20px_60px_rgba(16,61,44,0.16)]">
+      <div
+        aria-live="assertive"
+        className="fixed left-4 right-4 top-24 z-50 rounded-[8px] border border-[#d7a948]/40 bg-white p-4 shadow-[0_20px_60px_rgba(16,61,44,0.16)] sm:left-auto sm:w-[min(26rem,calc(100vw-2rem))]"
+      >
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#d97706]">
@@ -1028,8 +1188,11 @@ export function AdminDashboard({
 function OrdersPanel({
   error,
   highlightedOrderId,
+  installAvailable,
+  isAdminAppInstalled,
   loading,
   orders,
+  onInstallAdminApp,
   onRefresh,
   onUpdateStatus,
   onUpdateDeliveryFee,
@@ -1039,8 +1202,11 @@ function OrdersPanel({
 }: {
   error: string;
   highlightedOrderId: string | null;
+  installAvailable: boolean;
+  isAdminAppInstalled: boolean;
   loading: boolean;
   orders: OrderRecord[];
+  onInstallAdminApp: () => void;
   onRefresh: () => void | Promise<void>;
   onUpdateStatus: (orderId: string, status: OrderStatus) => void | Promise<void>;
   onUpdateDeliveryFee: (orderId: string, deliveryFee: number) => void | Promise<void>;
@@ -1052,25 +1218,40 @@ function OrdersPanel({
     <PanelShell
       title="Pedidos"
       action={
-        <div className="grid gap-2 sm:flex sm:items-center">
+        <div className="grid w-full gap-2 sm:w-auto sm:grid-cols-2 lg:flex lg:items-center">
           <button
             type="button"
             onClick={() => void onRefresh()}
-            className="min-h-10 border border-[#103d2c] bg-[#103d2c] px-4 text-sm font-semibold text-white transition hover:border-[#d7a948] hover:bg-[#d7a948] hover:text-[#103d2c]"
+            className="min-h-12 border border-[#103d2c] bg-[#103d2c] px-4 text-sm font-semibold text-white transition hover:border-[#d7a948] hover:bg-[#d7a948] hover:text-[#103d2c] lg:min-h-10"
           >
             Atualizar
           </button>
           <button
             type="button"
-            onClick={onEnableSound}
-            className="min-h-10 border border-[#d7a948] bg-[#d7a948] px-4 text-sm font-semibold text-[#103d2c] transition hover:bg-[#f1cf77]"
+            onClick={onInstallAdminApp}
+            disabled={isAdminAppInstalled}
+            title={
+              installAvailable
+                ? "Instalar painel no celular"
+                : "O navegador libera a instalacao quando o PWA esta elegivel"
+            }
+            className="min-h-12 border border-[#4b164c] bg-[#4b164c] px-4 text-sm font-semibold text-white transition hover:bg-[#3b0a45] disabled:cursor-not-allowed disabled:opacity-60 lg:min-h-10"
           >
-            Ativar som de pedidos
+            {isAdminAppInstalled
+              ? "Painel instalado"
+              : "Instalar painel no celular"}
+          </button>
+          <button
+            type="button"
+            onClick={onEnableSound}
+            className="min-h-12 border border-[#d7a948] bg-[#d7a948] px-4 text-sm font-semibold text-[#103d2c] transition hover:bg-[#f1cf77] lg:min-h-10"
+          >
+            Ativar som
           </button>
           <button
             type="button"
             onClick={onTestSound}
-            className="min-h-10 border border-[#103d2c] bg-white px-4 text-sm font-semibold text-[#103d2c] transition hover:bg-[#f3ead2]"
+            className="min-h-12 border border-[#103d2c] bg-white px-4 text-sm font-semibold text-[#103d2c] transition hover:bg-[#f3ead2] lg:min-h-10"
           >
             Testar som
           </button>
@@ -1113,18 +1294,18 @@ function OrdersPanel({
               <article
                 id={`order-${order.id}`}
                 key={order.id}
-                className={`rounded-[8px] border bg-white p-4 transition ${
+                className={`scroll-mt-32 rounded-[8px] border bg-white p-5 shadow-sm transition md:p-6 ${
                   highlightedOrderId === order.id
-                    ? "border-[#d7a948] shadow-[0_0_0_3px_rgba(215,169,72,0.24)]"
+                    ? "border-[#d7a948] shadow-[0_0_0_3px_rgba(215,169,72,0.24),0_18px_50px_rgba(16,61,44,0.12)]"
                     : "border-[#d7a948]/30"
                 }`}
               >
-                <div className="flex flex-col gap-3 border-b border-[#d7a948]/25 pb-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="flex flex-col gap-4 border-b border-[#d7a948]/25 pb-4 lg:flex-row lg:items-start lg:justify-between">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#4b164c]">
                       Pedido {formatOrderNumber(order.order_number)}
                     </p>
-                    <h3 className="mt-2 text-xl font-semibold text-[#103d2c]">
+                    <h3 className="mt-2 text-2xl font-semibold text-[#103d2c] md:text-xl">
                       {order.customer_name}
                     </h3>
                     <p className="mt-1 text-sm text-[#526354]">
@@ -1132,8 +1313,12 @@ function OrdersPanel({
                     </p>
                   </div>
 
-                  <label className="grid gap-1">
-                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[#4b164c]">
+                  <label
+                    className={`grid gap-2 rounded-[8px] border px-3 py-2 ${getOrderStatusClassName(
+                      order.status,
+                    )}`}
+                  >
+                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-current opacity-75">
                       Status do pedido
                     </span>
                     <select
@@ -1144,7 +1329,7 @@ function OrdersPanel({
                           event.target.value as OrderStatus,
                         )
                       }
-                      className="min-h-11 border border-[#d7a948]/45 bg-[#fffaf0] px-3 text-sm font-semibold text-[#103d2c] outline-none transition focus:border-[#103d2c]"
+                      className="min-h-12 min-w-0 border border-current/25 bg-white/70 px-3 text-base font-bold text-current outline-none transition focus:border-current lg:min-h-11 lg:text-sm"
                     >
                       {ORDER_STATUSES.map((statusOption) => (
                         <option key={statusOption} value={statusOption}>
@@ -1155,7 +1340,7 @@ function OrdersPanel({
                   </label>
                 </div>
 
-                <div className="grid gap-4 py-4 lg:grid-cols-3">
+                <div className="grid gap-4 py-5 lg:grid-cols-3">
                   <OrderInfoBlock
                     label="Endereço"
                     value={
@@ -1178,7 +1363,7 @@ function OrdersPanel({
                   />
                 </div>
 
-                <div className="border-y border-[#d7a948]/25 py-4">
+                <div className="border-y border-[#d7a948]/25 py-5">
                   <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#4b164c]">
                     Itens e complementos
                   </p>
@@ -1186,7 +1371,7 @@ function OrdersPanel({
                     {order.items.map((item) => (
                       <div
                         key={item.id}
-                        className="rounded-[8px] border border-[#d7a948]/25 bg-[#fffaf0] p-3"
+                        className="rounded-[8px] border border-[#d7a948]/25 bg-[#fffaf0] p-4"
                       >
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
@@ -1236,7 +1421,7 @@ function OrdersPanel({
                   </div>
                 </div>
 
-                <div className="grid gap-2 pt-4 text-sm sm:ml-auto sm:max-w-sm">
+                <div className="grid gap-3 pt-5 text-sm sm:ml-auto sm:max-w-sm">
                   <div className="flex items-center justify-between text-[#526354]">
                     <span>Subtotal</span>
                     <span>{formatCurrency(order.subtotal)}</span>
@@ -1277,7 +1462,7 @@ function OrdersPanel({
                           onUpdateDeliveryFee(order.id, newFee);
                         }
                       }}
-                      className="w-20 border border-[#d7a948]/45 bg-[#fffaf0] px-2 py-1 text-sm text-[#103d2c] outline-none transition focus:border-[#103d2c]"
+                      className="min-h-11 w-28 border border-[#d7a948]/45 bg-[#fffaf0] px-3 text-base text-[#103d2c] outline-none transition focus:border-[#103d2c] sm:w-24 sm:text-sm"
                     />
                   </div>
                   <div className="flex items-center justify-between border-t border-[#103d2c]/15 pt-2">
@@ -1301,7 +1486,9 @@ function OrderInfoBlock({ label, value }: { label: string; value: string }) {
       <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#4b164c]">
         {label}
       </p>
-      <p className="mt-1 text-sm leading-6 text-[#526354]">{value}</p>
+      <p className="mt-1 text-base leading-7 text-[#526354] lg:text-sm lg:leading-6">
+        {value}
+      </p>
     </div>
   );
 }
@@ -1319,7 +1506,7 @@ function PanelShell({
     <div className="rounded-[8px] border border-[#d7a948]/35 bg-white">
       <div className="flex flex-col gap-3 border-b border-[#d7a948]/25 p-4 md:flex-row md:items-center md:justify-between">
         <h2 className="text-2xl font-semibold text-[#103d2c]">{title}</h2>
-        {action}
+        <div className="w-full md:w-auto">{action}</div>
       </div>
       <div className="p-4">{children}</div>
     </div>

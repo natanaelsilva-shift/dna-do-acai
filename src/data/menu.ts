@@ -55,6 +55,19 @@ export type CatalogData = {
 
 export const CATALOG_STORAGE_KEY = "dna-do-acai-catalog-v3";
 
+const requiredPaidExtraOptions: ComplementOption[] = [
+  {
+    id: "nutella-extra",
+    name: "Nutella",
+    price: 350,
+  },
+  {
+    id: "m-m-extra",
+    name: "M&M",
+    price: 350,
+  },
+];
+
 export const productImages = {
   dnaExplosao: "/images/Copo de 300ml.jpeg",
   dnaSupremo: "/images/copo-de-500.jpeg",
@@ -117,6 +130,28 @@ export const productImageDefaults: Record<string, ProductImageDefaults> = {
 
 const isLocalProductImage = (image: string) => image.startsWith("/images/");
 
+function withRequiredPaidExtras(complementGroups: ComplementGroup[]) {
+  return complementGroups.map((group) => {
+    if (group.id !== "turbine-seu-acai") {
+      return group;
+    }
+
+    const existingOptionIds = new Set(group.options.map((option) => option.id));
+    const missingOptions = requiredPaidExtraOptions.filter(
+      (option) => !existingOptionIds.has(option.id),
+    );
+
+    if (missingOptions.length === 0) {
+      return group;
+    }
+
+    return {
+      ...group,
+      options: [...group.options, ...missingOptions],
+    };
+  });
+}
+
 export function withCatalogProductImages(catalog: CatalogData): CatalogData {
   const existingCategoryIds = new Set(
     catalog.categories.map((category) => category.id),
@@ -135,12 +170,12 @@ export function withCatalogProductImages(catalog: CatalogData): CatalogData {
       ...catalog.products,
       ...products.filter((product) => !existingProductIds.has(product.id)),
     ],
-    complementGroups: [
+    complementGroups: withRequiredPaidExtras([
       ...catalog.complementGroups,
       ...cupComplementGroups.filter(
         (group) => !existingComplementGroupIds.has(group.id),
       ),
-    ],
+    ]),
   };
 
   return {
@@ -463,6 +498,16 @@ export const cupComplementGroups: ComplementGroup[] = [
         id: "pacoca-extra",
         name: "Paçoca extra",
         price: 200,
+      },
+      {
+        id: "nutella-extra",
+        name: "Nutella",
+        price: 350,
+      },
+      {
+        id: "m-m-extra",
+        name: "M&M",
+        price: 350,
       },
     ],
   },
