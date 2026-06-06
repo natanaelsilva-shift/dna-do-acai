@@ -4,6 +4,8 @@ const ADMIN_ASSETS = [
   "/manifest.json",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
+  "/apple-touch-icon.png",
+  "/images/logo-dna-acai.png",
   "/sounds/novo-pedido.mp3",
 ];
 

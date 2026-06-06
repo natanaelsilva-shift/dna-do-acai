@@ -48,6 +48,11 @@ const homeImages = {
   },
 } as const;
 
+const brandLogo = {
+  src: "/images/logo-dna-acai.png",
+  alt: "Logo da DNA do Açaí",
+} as const;
+
 function AboutFeatureIcon({
   icon,
 }: {
@@ -145,17 +150,14 @@ export default function Home() {
       <header className="absolute left-0 right-0 top-0 z-20">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 md:px-8 md:py-5">
           <a href="#" className="group flex items-center gap-3" aria-label="DNA do Açaí">
-            <span className="grid size-10 shrink-0 place-items-center border border-[#d7a948] bg-[#103d2c] text-sm font-semibold text-[#f8e8b5] md:size-11">
-              DNA
-            </span>
-            <span className="leading-tight">
-              <span className="block text-xs font-semibold uppercase tracking-[0.14em] text-[#f8e8b5] md:text-sm md:tracking-[0.18em]">
-                DNA do
-              </span>
-              <span className="block text-lg font-semibold text-white md:text-xl">
-                Açaí
-              </span>
-            </span>
+            <Image
+              src={brandLogo.src}
+              alt={brandLogo.alt}
+              width={72}
+              height={72}
+              priority
+              className="size-14 shrink-0 object-contain drop-shadow-[0_10px_20px_rgba(0,0,0,0.32)] transition duration-300 group-hover:scale-[1.03] md:size-16"
+            />
           </a>
 
           <nav className="hidden items-center gap-8 text-sm font-medium text-white/80 md:flex">
@@ -211,6 +213,14 @@ export default function Home() {
 
         <div className="relative z-10 mx-auto grid min-h-[86svh] max-w-7xl gap-8 px-4 pb-12 pt-28 md:min-h-[86vh] md:px-8 md:pb-16 md:pt-32 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] lg:items-center lg:pb-20">
           <div className="order-2 max-w-3xl motion-safe:[animation:dna-about-fade_700ms_ease-out_both] lg:order-1">
+            <Image
+              src={brandLogo.src}
+              alt={brandLogo.alt}
+              width={160}
+              height={160}
+              priority
+              className="mb-5 size-28 object-contain drop-shadow-[0_18px_34px_rgba(0,0,0,0.36)] sm:size-32 md:size-36"
+            />
             <p className="w-fit rounded-[8px] border border-[#d7a948]/35 bg-white/[0.06] px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#f8e8b5] backdrop-blur md:text-sm md:tracking-[0.2em]">
               Bem-vindo ao sabor DNA
             </p>
@@ -403,9 +413,13 @@ export default function Home() {
 
         <div className="relative mx-auto flex max-w-7xl flex-col gap-6 md:flex-row md:items-center md:justify-between">
           <div className="flex max-w-2xl gap-4">
-            <span className="grid size-12 shrink-0 place-items-center rounded-[8px] border border-[#d7a948]/55 bg-[#103d2c] text-sm font-semibold text-[#f8e8b5] shadow-[0_16px_36px_rgba(0,0,0,0.22)]">
-              DNA
-            </span>
+            <Image
+              src={brandLogo.src}
+              alt={brandLogo.alt}
+              width={88}
+              height={88}
+              className="size-16 shrink-0 object-contain drop-shadow-[0_16px_36px_rgba(0,0,0,0.28)]"
+            />
             <div>
               <p className="text-base font-semibold uppercase tracking-[0.18em] text-[#d7a948]">
                 DNA DO AÇAÍ

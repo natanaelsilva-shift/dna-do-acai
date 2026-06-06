@@ -1,6 +1,8 @@
 {
   "name": "DNA do Açaí Admin",
   "short_name": "DNA Admin",
+  "description": "Painel administrativo da DNA do Açaí.",
+  "lang": "pt-BR",
   "id": "/admin/pedidos",
   "start_url": "/admin/pedidos",
   "scope": "/admin/",

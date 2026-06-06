@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import {
   useCallback,
@@ -48,6 +49,7 @@ const tabs: { id: AdminTab; label: string; shortLabel: string }[] = [
 ];
 
 const ORDER_SOUND_SRC = "/sounds/novo-pedido.mp3";
+const BRAND_LOGO_SRC = "/images/logo-dna-acai.png";
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("pt-BR", {
@@ -337,7 +339,7 @@ export function AdminDashboard({
     } catch (error) {
       console.log("Erro ao tocar som", error);
       setSoundError(
-        "Toque no botão 'Ativar som de pedidos' para liberar notificações sonoras.",
+        "Toque no botão 'Ativar som' para liberar notificações sonoras.",
       );
       return false;
     }
@@ -920,16 +922,26 @@ export function AdminDashboard({
   }
 
   return (
-    <main className="min-h-screen bg-[#f6f1e5] pb-24 text-[#16221a] lg:pb-0">
+    <main className="min-h-screen bg-[#f6f1e5] pb-32 text-[#16221a] lg:pb-0">
       <header className="sticky top-0 z-40 border-b border-[#d7a948]/35 bg-[#103d2c] px-4 py-3 text-white shadow-[0_12px_30px_rgba(7,27,18,0.18)] md:px-8 md:py-5">
         <div className="mx-auto flex max-w-7xl flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#d7a948]">
-              DNA do Açaí
-            </p>
-            <h1 className="mt-1 text-2xl font-semibold md:text-3xl">
-              Painel administrativo
-            </h1>
+          <div className="flex items-center gap-3">
+            <Image
+              src={BRAND_LOGO_SRC}
+              alt="Logo da DNA do Açaí"
+              width={72}
+              height={72}
+              priority
+              className="size-14 shrink-0 object-contain drop-shadow-[0_10px_22px_rgba(0,0,0,0.3)] md:size-16"
+            />
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#d7a948]">
+                DNA do Açaí
+              </p>
+              <h1 className="mt-1 text-2xl font-semibold md:text-3xl">
+                Painel administrativo
+              </h1>
+            </div>
           </div>
 
           <div className="-mx-1 flex flex-nowrap gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:overflow-visible sm:pb-0">
@@ -966,6 +978,19 @@ export function AdminDashboard({
 
       <div className="mx-auto grid max-w-7xl gap-5 px-4 py-4 md:px-8 md:py-6 lg:grid-cols-[260px_1fr]">
         <aside className="space-y-4 lg:sticky lg:top-32 lg:self-start">
+          <div className="hidden rounded-[8px] border border-[#d7a948]/35 bg-[#071b12] p-4 text-center text-white shadow-[0_16px_36px_rgba(7,27,18,0.16)] lg:block">
+            <Image
+              src={BRAND_LOGO_SRC}
+              alt="Logo da DNA do Açaí"
+              width={160}
+              height={160}
+              className="mx-auto size-28 object-contain drop-shadow-[0_12px_24px_rgba(0,0,0,0.32)]"
+            />
+            <p className="mt-3 text-xs font-semibold uppercase tracking-[0.18em] text-[#d7a948]">
+              DNA Admin
+            </p>
+          </div>
+
           <div className="rounded-[8px] border border-[#d7a948]/35 bg-white p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#4b164c]">
               Status
@@ -1084,6 +1109,18 @@ export function AdminDashboard({
       </div>
 
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[#d7a948]/35 bg-white/95 px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 shadow-[0_-12px_30px_rgba(7,27,18,0.14)] backdrop-blur lg:hidden">
+        <div className="mx-auto mb-2 flex max-w-7xl items-center justify-center gap-2 text-[#103d2c]">
+          <Image
+            src={BRAND_LOGO_SRC}
+            alt="Logo da DNA do Açaí"
+            width={36}
+            height={36}
+            className="size-8 object-contain"
+          />
+          <span className="text-xs font-semibold uppercase tracking-[0.16em]">
+            DNA Admin
+          </span>
+        </div>
         <div className="mx-auto grid max-w-7xl grid-cols-5 gap-1">
           {tabs.map((tab) => {
             const badgeCount = tab.id === "orders" ? newOrdersCount : 0;
