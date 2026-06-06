@@ -1,14 +1,14 @@
 {
-  "name": "DNA do Açaí",
-  "short_name": "DNA Açaí",
-  "description": "Loja online da DNA do Açaí.",
+  "name": "DNA do Açaí Admin",
+  "short_name": "DNA Admin",
+  "description": "Painel administrativo da DNA do Açaí.",
   "lang": "pt-BR",
-  "id": "/",
-  "start_url": "/",
-  "scope": "/",
+  "id": "/admin/pedidos",
+  "start_url": "/admin/pedidos",
+  "scope": "/admin/",
   "display": "standalone",
   "background_color": "#071b12",
-  "theme_color": "#071b12",
+  "theme_color": "#3b0a45",
   "orientation": "portrait",
   "icons": [
     {

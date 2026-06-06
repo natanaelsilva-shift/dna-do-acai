@@ -7,6 +7,7 @@ import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 export const metadata: Metadata = {
   title: "Pedidos | Admin | DNA do Açaí",
   description: "Painel de pedidos em tempo real da loja DNA do Açaí.",
+  manifest: "/admin-manifest.json",
 };
 
 export const dynamic = "force-dynamic";

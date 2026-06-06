@@ -1,11 +1,15 @@
-const CACHE_NAME = "dna-admin-pwa-v1";
-const ADMIN_ASSETS = [
+const CACHE_NAME = "dna-acai-pwa-v2";
+const PRECACHE_ASSETS = [
+  "/",
   "/admin/pedidos",
   "/manifest.json",
+  "/admin-manifest.json",
+  "/favicon.ico",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
   "/apple-touch-icon.png",
   "/images/logo-dna-acai.png",
+  "/images/og-dna-acai.png",
   "/sounds/novo-pedido.mp3",
 ];
 
@@ -13,7 +17,7 @@ self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
       .open(CACHE_NAME)
-      .then((cache) => cache.addAll(ADMIN_ASSETS))
+      .then((cache) => cache.addAll(PRECACHE_ASSETS))
       .catch(() => undefined),
   );
   self.skipWaiting();
@@ -43,15 +47,17 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
 
-  if (url.origin !== self.location.origin) {
+  if (url.origin !== self.location.origin || url.pathname.startsWith("/api/")) {
     return;
   }
 
-  const isAdminNavigation =
-    request.mode === "navigate" && url.pathname.startsWith("/admin");
-  const isAdminAsset = ADMIN_ASSETS.includes(url.pathname);
+  const isNavigation = request.mode === "navigate";
+  const isPrecachedAsset = PRECACHE_ASSETS.includes(url.pathname);
+  const isStaticAsset = ["image", "style", "script", "font", "audio"].includes(
+    request.destination,
+  );
 
-  if (!isAdminNavigation && !isAdminAsset) {
+  if (!isNavigation && !isPrecachedAsset && !isStaticAsset) {
     return;
   }
 
@@ -73,8 +79,10 @@ self.addEventListener("fetch", (event) => {
           return cachedResponse;
         }
 
-        if (isAdminNavigation) {
-          return caches.match("/admin/pedidos");
+        if (isNavigation) {
+          return url.pathname.startsWith("/admin")
+            ? caches.match("/admin/pedidos")
+            : caches.match("/");
         }
 
         return new Response("Offline", {

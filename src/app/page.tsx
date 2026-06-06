@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { ClientPwaInstall } from "@/components/ClientPwaInstall";
 import { MenuCatalog } from "@/components/MenuCatalog";
 import { categories, productImages } from "@/data/menu";
 
@@ -179,6 +180,8 @@ export default function Home() {
             Pedir agora
           </a>
 
+          <ClientPwaInstall className="hidden md:grid md:justify-items-end" />
+
           <details className="group relative md:hidden">
             <summary
               className="grid size-11 cursor-pointer list-none place-items-center border border-[#d7a948]/70 bg-[#103d2c]/78 text-[#f8e8b5] backdrop-blur transition group-open:bg-[#d7a948] group-open:text-[#103d2c] [&::-webkit-details-marker]:hidden"
@@ -251,6 +254,11 @@ export default function Home() {
                 Ver cardápio
               </a>
             </div>
+
+            <ClientPwaInstall
+              className="mt-4 grid max-w-xs md:hidden"
+              noteClassName="text-white/78"
+            />
           </div>
 
           <div className="order-1 motion-safe:[animation:dna-about-fade_900ms_ease-out_120ms_both] lg:order-2">
