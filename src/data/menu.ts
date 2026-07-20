@@ -6,6 +6,7 @@ export type Category = {
 
 export type Product = {
   id: string;
+  active?: boolean;
   categoryId: string;
   name: string;
   description: string;

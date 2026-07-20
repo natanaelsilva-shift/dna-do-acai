@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { AdminDashboard } from "@/components/AdminDashboard";
 import type { OrderRecord } from "@/data/orders";
 import { listLocalOrders } from "@/lib/orders/local-store";
+import { getLocalStoreStatus } from "@/lib/store-status/local-store";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 
 export const metadata: Metadata = {
@@ -35,7 +36,15 @@ async function getInitialOrders() {
 }
 
 export default async function AdminOrdersPage() {
-  const initialOrders = await getInitialOrders();
+  const [initialOrders, initialStoreStatus] = await Promise.all([
+    getInitialOrders(),
+    getLocalStoreStatus(),
+  ]);
 
-  return <AdminDashboard initialOrders={initialOrders} />;
+  return (
+    <AdminDashboard
+      initialOrders={initialOrders}
+      initialStoreStatus={initialStoreStatus}
+    />
+  );
 }

@@ -11,6 +11,7 @@ import {
   createLocalOrder,
   listLocalOrders,
 } from "@/lib/orders/local-store";
+import { getLocalStoreStatus } from "@/lib/store-status/local-store";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import { buildWhatsAppBusinessOrderPayload } from "@/lib/whatsapp/business";
 
@@ -168,6 +169,15 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const storeStatus = await getLocalStoreStatus();
+
+    if (storeStatus.status === "closed") {
+      return NextResponse.json(
+        { error: "No momento estamos fechados. Volte em breve 💜" },
+        { status: 409 },
+      );
+    }
+
     const order = normalizeOrderPayload(await request.json());
     const validationError = validateOrder(order);
 

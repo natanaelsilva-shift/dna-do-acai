@@ -39,16 +39,20 @@ export function ClientPwaInstall({
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    setIsInstalled(isStandaloneApp());
-    setIsIos(isIosDevice());
+    const frameId = window.requestAnimationFrame(() => {
+      setIsInstalled(isStandaloneApp());
+      setIsIos(isIosDevice());
+    });
 
     if (!("serviceWorker" in navigator)) {
-      return;
+      return () => window.cancelAnimationFrame(frameId);
     }
 
     navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch((error) => {
       console.log("Erro ao registrar service worker da loja", error);
     });
+
+    return () => window.cancelAnimationFrame(frameId);
   }, []);
 
   useEffect(() => {

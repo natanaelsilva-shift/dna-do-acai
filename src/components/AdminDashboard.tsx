@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import {
   useCallback,
   useEffect,
@@ -32,8 +31,24 @@ import {
   type OrderRecord,
   type OrderStatus,
 } from "@/data/orders";
+import {
+  getStoreStatusLabel,
+  type StoreStatus,
+  type StoreStatusPayload,
+} from "@/data/store-status";
+import {
+  setStoreStatus,
+  useStoreStatus,
+} from "@/lib/store-status/client";
 
-type AdminTab = "orders" | "products" | "images" | "categories" | "complements";
+type AdminTab =
+  | "home"
+  | "orders"
+  | "products"
+  | "settings"
+  | "images"
+  | "categories"
+  | "complements";
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -41,11 +56,10 @@ type BeforeInstallPromptEvent = Event & {
 };
 
 const tabs: { id: AdminTab; label: string; shortLabel: string }[] = [
+  { id: "home", label: "Início", shortLabel: "Início" },
   { id: "orders", label: "Pedidos", shortLabel: "Pedidos" },
   { id: "products", label: "Produtos", shortLabel: "Produtos" },
-  { id: "images", label: "Imagens", shortLabel: "Imagens" },
-  { id: "categories", label: "Categorias", shortLabel: "Categ." },
-  { id: "complements", label: "Complementos", shortLabel: "Compl." },
+  { id: "settings", label: "Configurações", shortLabel: "Config." },
 ];
 
 const ORDER_SOUND_SRC = "/sounds/novo-pedido.mp3";
@@ -65,6 +79,18 @@ const formatDateTime = (value: string) =>
 
 const formatOrderNumber = (orderNumber: number) =>
   `#${orderNumber.toString().padStart(4, "0")}`;
+
+const formatWaitTime = (createdAt: string) => {
+  const minutes = Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000));
+  if (minutes < 60) return `${minutes} min`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}min`;
+};
+
+const getCustomerWhatsAppUrl = (phone: string) => {
+  const digits = phone.replace(/\D/g, "");
+  const internationalPhone = digits.length <= 11 ? `55${digits}` : digits;
+  return `https://wa.me/${internationalPhone}`;
+};
 
 const getOrderStatusClassName = (status: OrderStatus) => {
   switch (status) {
@@ -152,9 +178,15 @@ function parseCatalogSnapshot(snapshot: string) {
 
 export function AdminDashboard({
   initialOrders = [],
+  initialStoreStatus,
 }: {
   initialOrders?: OrderRecord[];
+  initialStoreStatus?: StoreStatusPayload;
 }) {
+  const storeState = useStoreStatus({
+    initialStatus: initialStoreStatus,
+    poll: true,
+  });
   const catalogSnapshot = useSyncExternalStore(
     subscribeCatalogStore,
     getCatalogSnapshot,
@@ -164,7 +196,7 @@ export function AdminDashboard({
     () => parseCatalogSnapshot(catalogSnapshot),
     [catalogSnapshot],
   );
-  const [activeTab, setActiveTab] = useState<AdminTab>("orders");
+  const [activeTab, setActiveTab] = useState<AdminTab>("home");
   const [selectedProductId, setSelectedProductId] = useState(
     catalog.products[0]?.id ?? "",
   );
@@ -196,6 +228,7 @@ export function AdminDashboard({
   const notifiedOrderIds = useRef<Set<string>>(new Set());
   const soundEnabledRef = useRef(false);
   const isFetchingOrdersRef = useRef(false);
+  const isStoreOpen = storeState.status === "open";
 
   const selectedProduct =
     catalog.products.find((product) => product.id === selectedProductId) ??
@@ -206,26 +239,6 @@ export function AdminDashboard({
   const selectedGroup =
     catalog.complementGroups.find((group) => group.id === selectedGroupId) ??
     catalog.complementGroups[0];
-
-  const stats = useMemo(
-    () => [
-      { label: "Pedidos", value: orders.length },
-      { label: "Categorias", value: catalog.categories.length },
-      { label: "Produtos", value: catalog.products.length },
-      { label: "Complementos", value: catalog.complementGroups.length },
-      {
-        label: "Itens editáveis",
-        value:
-          catalog.products.length +
-          catalog.categories.length +
-          catalog.complementGroups.reduce(
-            (total, group) => total + group.options.length,
-            0,
-          ),
-      },
-    ],
-    [catalog, orders.length],
-  );
 
   const newOrdersCount = useMemo(
     () => orders.filter((order) => order.status === "Novo").length,
@@ -413,6 +426,22 @@ export function AdminDashboard({
     },
     [playNewOrderSound],
   );
+
+  const dashboardMetrics = useMemo(() => {
+    const todayKey = new Date().toLocaleDateString("pt-BR");
+    const todayOrders = orders.filter(
+      (order) => new Date(order.created_at).toLocaleDateString("pt-BR") === todayKey,
+    );
+    const finishedToday = todayOrders.filter((order) => order.status === "Finalizado");
+    const revenue = finishedToday.reduce((total, order) => total + order.total, 0);
+
+    return {
+      preparing: orders.filter((order) => order.status === "Em preparo").length,
+      finished: finishedToday.length,
+      revenue,
+      averageTicket: finishedToday.length ? Math.round(revenue / finishedToday.length) : 0,
+    };
+  }, [orders]);
 
   const fetchOrders = useCallback(async () => {
     const response = await fetch("/api/orders", { cache: "no-store" });
@@ -772,6 +801,7 @@ export function AdminDashboard({
   function addProduct() {
     const product: Product = {
       id: createId("produto", "Novo produto", catalog.products.map(({ id }) => id)),
+      active: true,
       categoryId: catalog.categories[0]?.id ?? "",
       name: "Novo produto",
       description: "Descrição do produto.",
@@ -921,142 +951,107 @@ export function AdminDashboard({
     setStatus("Opção removida.");
   }
 
+  async function toggleStoreStatus() {
+    const nextStatus: StoreStatus = isStoreOpen ? "closed" : "open";
+
+    try {
+      const updatedStatus = await setStoreStatus(nextStatus);
+      setStatus(`${getStoreStatusLabel(updatedStatus.status)} publicada.`);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Nao foi possivel atualizar o status da loja.";
+
+      setStatus(message);
+    }
+  }
+
+  async function logoutAdmin() {
+    try {
+      if (isSupabaseConfigured()) {
+        await createClient().auth.signOut();
+      }
+    } finally {
+      window.location.assign("/");
+    }
+  }
+
   return (
-    <main className="min-h-screen bg-[#f6f1e5] pb-32 text-[#16221a] lg:pb-0">
-      <header className="sticky top-0 z-40 border-b border-[#d7a948]/35 bg-[#103d2c] px-4 py-3 text-white shadow-[0_12px_30px_rgba(7,27,18,0.18)] md:px-8 md:py-5">
-        <div className="mx-auto flex max-w-7xl flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-center gap-3">
-            <Image
-              src={BRAND_LOGO_SRC}
-              alt="Logo da DNA do Açaí"
-              width={72}
-              height={72}
-              priority
-              className="size-14 shrink-0 object-contain drop-shadow-[0_10px_22px_rgba(0,0,0,0.3)] md:size-16"
-            />
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#d7a948]">
-                DNA do Açaí
-              </p>
-              <h1 className="mt-1 text-2xl font-semibold md:text-3xl">
-                Painel administrativo
-              </h1>
+    <main className="min-h-screen overflow-x-hidden bg-[#f5f6f3] pb-24 text-[#16221a] lg:pb-8">
+      <header className="sticky top-0 z-40 border-b border-white/10 bg-[#0b3425]/95 text-white shadow-lg backdrop-blur">
+        <div className="mx-auto flex min-h-[72px] max-w-[1500px] items-center justify-between gap-2 px-3 py-2 sm:gap-3 sm:px-4 lg:px-6">
+          <div className="flex min-w-0 items-center gap-3">
+            <Image src={BRAND_LOGO_SRC} alt="DNA do Açaí" width={52} height={52} priority className="size-10 shrink-0 object-contain sm:size-12" />
+            <div className="hidden min-w-0 md:block">
+              <p className="truncate text-base font-bold">DNA do Açaí</p>
+              <p className="text-xs text-white/65">Central de operações</p>
             </div>
           </div>
-
-          <div className="-mx-1 flex flex-nowrap gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:overflow-visible sm:pb-0">
-            <Link
-              href="/"
-              className="inline-flex min-h-11 shrink-0 items-center border border-white/30 px-4 text-sm font-semibold text-white transition hover:border-[#d7a948] hover:text-[#f8e8b5]"
-            >
-              Ver loja
-            </Link>
-            <button
-              type="button"
-              onClick={exportCatalog}
-              className="min-h-11 shrink-0 border border-[#d7a948] px-4 text-sm font-semibold text-[#f8e8b5] transition hover:bg-[#d7a948] hover:text-[#103d2c]"
-            >
-              Exportar JSON
+          <div className="grid min-w-0 flex-1 grid-cols-5 items-center justify-items-end gap-1 sm:flex sm:justify-end sm:gap-2">
+            <button type="button" onClick={() => void toggleStoreStatus()} className={`inline-flex min-h-11 w-full items-center justify-center gap-1 rounded-xl px-1 text-xs font-bold sm:w-auto sm:gap-2 sm:px-3 sm:text-sm ${isStoreOpen ? "bg-[#178a4b]" : "bg-[#c93636]"}`}>
+              <span className="hidden size-2.5 rounded-full bg-white sm:block" />
+              <span className="hidden sm:inline">Loja </span>{isStoreOpen ? "aberta" : "fechada"}
             </button>
-            <button
-              type="button"
-              onClick={resetCatalog}
-              className="min-h-11 shrink-0 border border-white/30 px-4 text-sm font-semibold text-white transition hover:border-[#d7a948] hover:text-[#f8e8b5]"
-            >
-              Restaurar
-            </button>
-            <button
-              type="button"
-              onClick={publishCatalog}
-              className="min-h-11 shrink-0 border border-[#d7a948] bg-[#d7a948] px-5 text-sm font-semibold text-[#103d2c] transition hover:bg-[#f1cf77]"
-            >
-              Publicar catálogo
-            </button>
+            <button type="button" onClick={() => setActiveTab("orders")} title="Ver novos pedidos" aria-label={`${newOrdersCount} pedidos novos`} className="relative grid size-11 place-items-center rounded-xl bg-white/10 text-lg transition hover:bg-white/20">☷{newOrdersCount > 0 ? <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-[#d7a948] px-1 text-[10px] font-black leading-5 text-[#103d2c]">{newOrdersCount}</span> : null}</button>
+            <button type="button" onClick={() => void enableOrderSound()} title="Ativar som de pedidos" aria-label="Ativar som de pedidos" className={`grid size-11 place-items-center rounded-xl text-lg transition ${soundEnabled ? "bg-[#d7a948] text-[#103d2c]" : "bg-white/10 hover:bg-white/20"}`}>♫</button>
+            <button type="button" onClick={() => void testOrderSound()} title="Testar som" aria-label="Testar som" className="hidden size-11 place-items-center rounded-xl bg-white/10 text-sm transition hover:bg-white/20 sm:grid">▶</button>
+            <button type="button" onClick={() => void loadOrders()} title="Atualizar pedidos" aria-label="Atualizar pedidos" className="grid size-11 place-items-center rounded-xl bg-white/10 text-xl transition hover:bg-white/20">↻</button>
+            <button type="button" onClick={() => void logoutAdmin()} title="Sair do painel" className="grid size-11 place-items-center rounded-xl border border-white/20 text-lg transition hover:bg-white/10" aria-label="Sair do painel">↗</button>
           </div>
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-7xl gap-5 px-4 py-4 md:px-8 md:py-6 lg:grid-cols-[260px_1fr]">
-        <aside className="space-y-4 lg:sticky lg:top-32 lg:self-start">
-          <div className="hidden rounded-[8px] border border-[#d7a948]/35 bg-[#071b12] p-4 text-center text-white shadow-[0_16px_36px_rgba(7,27,18,0.16)] lg:block">
-            <Image
-              src={BRAND_LOGO_SRC}
-              alt="Logo da DNA do Açaí"
-              width={160}
-              height={160}
-              className="mx-auto size-28 object-contain drop-shadow-[0_12px_24px_rgba(0,0,0,0.32)]"
-            />
-            <p className="mt-3 text-xs font-semibold uppercase tracking-[0.18em] text-[#d7a948]">
-              DNA Admin
-            </p>
-          </div>
-
-          <div className="rounded-[8px] border border-[#d7a948]/35 bg-white p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#4b164c]">
-              Status
-            </p>
-            <p className="mt-2 text-sm leading-6 text-[#526354]">{status}</p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-1">
-            {stats.map((stat) => (
-              <div
-                key={stat.label}
-                className="rounded-[8px] border border-[#d7a948]/30 bg-white p-4"
-              >
-                <p className="text-2xl font-semibold text-[#103d2c]">{stat.value}</p>
-                <p className="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-[#4b164c]">
-                  {stat.label}
-                </p>
-              </div>
-            ))}
-          </div>
-
-          <nav className="hidden gap-2 rounded-[8px] border border-[#d7a948]/35 bg-white p-2 lg:grid">
+      <div className="mx-auto grid max-w-[1500px] lg:grid-cols-[240px_minmax(0,1fr)]">
+        <aside className="hidden min-h-[calc(100vh-72px)] border-r border-[#103d2c]/10 bg-white p-4 lg:block">
+          <nav className="sticky top-[88px] space-y-2">
             {tabs.map((tab) => {
               const badgeCount = tab.id === "orders" ? newOrdersCount : 0;
-
               return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`min-h-11 px-3 text-left text-sm font-semibold transition ${
-                    activeTab === tab.id
-                      ? "bg-[#103d2c] text-white"
-                      : "text-[#103d2c] hover:bg-[#f3ead2]"
-                  }`}
-                >
-                  <span className="flex items-center justify-between gap-2">
-                    <span>{tab.label}</span>
-                    {badgeCount > 0 ? (
-                      <span className="rounded-full bg-[#d7a948] px-2 py-0.5 text-xs font-semibold text-[#103d2c]">
-                        {badgeCount}
-                      </span>
-                    ) : null}
-                  </span>
+                <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} className={`flex min-h-12 w-full items-center justify-between rounded-xl px-4 text-left text-sm font-bold transition ${activeTab === tab.id || (tab.id === "settings" && ["images", "categories", "complements"].includes(activeTab)) ? "bg-[#103d2c] text-white shadow-md" : "text-[#425448] hover:bg-[#edf3ef]"}`}>
+                  <span>{tab.label}</span>
+                  {badgeCount > 0 ? <span className="rounded-full bg-[#d7a948] px-2 py-0.5 text-xs text-[#103d2c]">{badgeCount}</span> : null}
                 </button>
               );
             })}
+            <div className="mt-6 rounded-2xl bg-[#f1ead8] p-4">
+              <p className="text-xs font-bold uppercase tracking-wider text-[#4b164c]">Status do painel</p>
+              <p className="mt-2 text-sm leading-5 text-[#526354]">{status}</p>
+            </div>
           </nav>
         </aside>
 
-        <section className="min-w-0">
+        <section className="min-w-0 p-4 md:p-6 lg:p-8">
+          {activeTab === "home" ? (
+            <DashboardOverview
+              averageTicket={dashboardMetrics.averageTicket}
+              finished={dashboardMetrics.finished}
+              isStoreOpen={isStoreOpen}
+              newOrders={newOrdersCount}
+              preparing={dashboardMetrics.preparing}
+              revenue={dashboardMetrics.revenue}
+              onAddProduct={addProduct}
+              onEnableSound={() => void enableOrderSound()}
+              onGoOrders={() => setActiveTab("orders")}
+              onGoProducts={() => setActiveTab("products")}
+              onTestSound={() => void testOrderSound()}
+              onToggleStore={() => void toggleStoreStatus()}
+            />
+          ) : null}
+
           {activeTab === "orders" ? (
             <OrdersPanel
               error={ordersError}
               highlightedOrderId={highlightedOrderId}
-              installAvailable={Boolean(installPrompt)}
-              isAdminAppInstalled={isAdminAppInstalled}
               loading={ordersLoading}
               orders={orders}
-              onInstallAdminApp={() => void installAdminPwa()}
               onRefresh={loadOrders}
               onUpdateStatus={updateOrderStatus}
               onUpdateDeliveryFee={updateOrderDeliveryFee}
               onEnableSound={() => void enableOrderSound()}
               onTestSound={() => void testOrderSound()}
               soundError={soundError}
+              soundEnabled={soundEnabled}
             />
           ) : null}
 
@@ -1070,6 +1065,22 @@ export function AdminDashboard({
               onDelete={deleteProduct}
               onSelect={setSelectedProductId}
               onUpdate={updateProduct}
+            />
+          ) : null}
+
+          {activeTab === "settings" ? (
+            <SettingsPanel
+              isAdminAppInstalled={isAdminAppInstalled}
+              isStoreOpen={isStoreOpen}
+              soundEnabled={soundEnabled}
+              onEnableSound={() => void enableOrderSound()}
+              onExport={exportCatalog}
+              onInstall={() => void installAdminPwa()}
+              onNavigate={setActiveTab}
+              onPublish={publishCatalog}
+              onReset={resetCatalog}
+              onTestSound={() => void testOrderSound()}
+              onToggleStore={() => void toggleStoreStatus()}
             />
           ) : null}
 
@@ -1108,20 +1119,8 @@ export function AdminDashboard({
         {notification?.visible ? <NotificationToast /> : null}
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[#d7a948]/35 bg-white/95 px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 shadow-[0_-12px_30px_rgba(7,27,18,0.14)] backdrop-blur lg:hidden">
-        <div className="mx-auto mb-2 flex max-w-7xl items-center justify-center gap-2 text-[#103d2c]">
-          <Image
-            src={BRAND_LOGO_SRC}
-            alt="Logo da DNA do Açaí"
-            width={36}
-            height={36}
-            className="size-8 object-contain"
-          />
-          <span className="text-xs font-semibold uppercase tracking-[0.16em]">
-            DNA Admin
-          </span>
-        </div>
-        <div className="mx-auto grid max-w-7xl grid-cols-5 gap-1">
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[#103d2c]/10 bg-white/95 px-2 pb-[calc(env(safe-area-inset-bottom)+0.45rem)] pt-2 shadow-[0_-8px_30px_rgba(7,27,18,0.12)] backdrop-blur lg:hidden">
+        <div className="mx-auto grid max-w-lg grid-cols-[repeat(4,minmax(0,1fr))] gap-1">
           {tabs.map((tab) => {
             const badgeCount = tab.id === "orders" ? newOrdersCount : 0;
 
@@ -1130,8 +1129,8 @@ export function AdminDashboard({
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`relative flex min-h-14 flex-col items-center justify-center rounded-[8px] px-1 text-center text-[11px] font-semibold transition ${
-                  activeTab === tab.id
+                className={`relative flex min-h-14 min-w-0 w-full flex-col items-center justify-center rounded-xl px-1 text-center text-[11px] font-bold transition ${
+                  activeTab === tab.id || (tab.id === "settings" && ["images", "categories", "complements"].includes(activeTab))
                     ? "bg-[#103d2c] text-white"
                     : "text-[#103d2c] hover:bg-[#f3ead2]"
                 }`}
@@ -1222,40 +1221,177 @@ export function AdminDashboard({
   }
 }
 
+function DashboardOverview({
+  averageTicket,
+  finished,
+  isStoreOpen,
+  newOrders,
+  preparing,
+  revenue,
+  onAddProduct,
+  onEnableSound,
+  onGoOrders,
+  onGoProducts,
+  onTestSound,
+  onToggleStore,
+}: {
+  averageTicket: number;
+  finished: number;
+  isStoreOpen: boolean;
+  newOrders: number;
+  preparing: number;
+  revenue: number;
+  onAddProduct: () => void;
+  onEnableSound: () => void;
+  onGoOrders: () => void;
+  onGoProducts: () => void;
+  onTestSound: () => void;
+  onToggleStore: () => void;
+}) {
+  const metrics = [
+    { label: "Pedidos novos", value: String(newOrders), tone: "text-[#b45309] bg-[#fff7e6]" },
+    { label: "Em preparo", value: String(preparing), tone: "text-[#5b21b6] bg-[#f4f0ff]" },
+    { label: "Finalizados hoje", value: String(finished), tone: "text-[#14743f] bg-[#eaf8ef]" },
+    { label: "Faturamento do dia", value: formatCurrency(revenue), tone: "text-[#103d2c] bg-[#e9f1ec]" },
+    { label: "Ticket médio", value: formatCurrency(averageTicket), tone: "text-[#4b164c] bg-[#f6edf6]" },
+    { label: "Status da loja", value: isStoreOpen ? "Aberta" : "Fechada", tone: isStoreOpen ? "text-[#14743f] bg-[#eaf8ef]" : "text-[#b42323] bg-[#fff0f0]" },
+  ];
+  const actions = [
+    { label: "Ver pedidos novos", detail: `${newOrders} aguardando ação`, action: onGoOrders },
+    { label: isStoreOpen ? "Fechar loja" : "Abrir loja", detail: "Atualiza imediatamente", action: onToggleStore },
+    { label: "Cadastrar produto", detail: "Adicionar ao cardápio", action: onAddProduct },
+    { label: "Alterar preços", detail: "Gerenciar produtos", action: onGoProducts },
+    { label: "Ativar som", detail: "Liberar alertas", action: onEnableSound },
+    { label: "Testar som", detail: "Ouvir notificação", action: onTestSound },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <p className="text-sm font-bold uppercase tracking-[0.14em] text-[#8a6a26]">Visão geral</p>
+        <h1 className="mt-1 text-2xl font-bold text-[#103d2c] md:text-3xl">Olá! Acompanhe sua operação.</h1>
+        <p className="mt-2 text-sm text-[#66736a]">Dados de hoje atualizados automaticamente.</p>
+      </div>
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
+        {metrics.map((metric) => (
+          <article key={metric.label} className="rounded-2xl border border-[#103d2c]/8 bg-white p-4 shadow-sm md:p-5">
+            <div className={`inline-flex rounded-xl px-3 py-1.5 text-xs font-bold ${metric.tone}`}>{metric.label}</div>
+            <p className="mt-4 break-words text-2xl font-black text-[#17251c] md:text-3xl">{metric.value}</p>
+          </article>
+        ))}
+      </div>
+      <section className="rounded-2xl border border-[#103d2c]/8 bg-white p-4 shadow-sm md:p-6">
+        <h2 className="text-lg font-bold text-[#103d2c]">Ações rápidas</h2>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {actions.map((item) => (
+            <button key={item.label} type="button" onClick={item.action} className="min-h-[76px] rounded-xl border border-[#103d2c]/10 bg-[#fafbf9] px-4 text-left transition hover:border-[#d7a948] hover:bg-[#fffaf0] active:scale-[.99]">
+              <span className="block font-bold text-[#103d2c]">{item.label}</span>
+              <span className="mt-1 block text-xs text-[#68756c]">{item.detail}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function SettingsPanel({
+  isAdminAppInstalled,
+  isStoreOpen,
+  soundEnabled,
+  onEnableSound,
+  onExport,
+  onInstall,
+  onNavigate,
+  onPublish,
+  onReset,
+  onTestSound,
+  onToggleStore,
+}: {
+  isAdminAppInstalled: boolean;
+  isStoreOpen: boolean;
+  soundEnabled: boolean;
+  onEnableSound: () => void;
+  onExport: () => void;
+  onInstall: () => void;
+  onNavigate: (tab: AdminTab) => void;
+  onPublish: () => void;
+  onReset: () => void;
+  onTestSound: () => void;
+  onToggleStore: () => void;
+}) {
+  return (
+    <div className="space-y-5">
+      <div><p className="text-sm font-bold uppercase tracking-[0.14em] text-[#8a6a26]">Administração</p><h1 className="mt-1 text-2xl font-bold text-[#103d2c] md:text-3xl">Configurações</h1></div>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <SettingsCard title="Dados da loja" description="Identidade e informações públicas." />
+        <SettingsCard title="WhatsApp" description={`Atendimento: ${WHATSAPP_BUSINESS_PHONE_NUMBER}`} />
+        <SettingsCard title="Instagram" description="Dados de contato e rede social." />
+        <SettingsCard title="Horário de funcionamento" description="Consulte e organize os horários da loja." />
+        <SettingsCard title="Status da loja" description={isStoreOpen ? "A loja está recebendo pedidos." : "Novos pedidos estão bloqueados."} actionLabel={isStoreOpen ? "Fechar loja" : "Abrir loja"} onAction={onToggleStore} />
+        <SettingsCard title="Som de pedidos" description={soundEnabled ? "Alertas sonoros ativados." : "Toque para liberar o áudio neste aparelho."} actionLabel={soundEnabled ? "Testar som" : "Ativar som"} onAction={soundEnabled ? onTestSound : onEnableSound} />
+        <SettingsCard title="Adicionais pagos" description="Preços dos adicionais e opções extras." actionLabel="Gerenciar" onAction={() => onNavigate("complements")} />
+        <SettingsCard title="Complementos" description="Grupos, limites e opções existentes." actionLabel="Gerenciar" onAction={() => onNavigate("complements")} />
+        <SettingsCard title="Imagens" description="Imagens e enquadramento dos produtos." actionLabel="Gerenciar" onAction={() => onNavigate("images")} />
+        <SettingsCard title="Categorias" description="Organização do cardápio." actionLabel="Gerenciar" onAction={() => onNavigate("categories")} />
+        <SettingsCard title="PWA" description={isAdminAppInstalled ? "Aplicativo instalado neste aparelho." : "Instale o painel na tela inicial."} actionLabel={isAdminAppInstalled ? undefined : "Instalar painel"} onAction={onInstall} />
+        <SettingsCard title="Segurança" description="Sessão administrativa e acesso protegido." />
+      </div>
+      <section className="rounded-2xl border border-[#103d2c]/8 bg-white p-5 shadow-sm">
+        <h2 className="font-bold text-[#103d2c]">Manutenção do cardápio</h2>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button onClick={onPublish} className="min-h-11 rounded-xl bg-[#103d2c] px-4 text-sm font-bold text-white">Publicar catálogo</button>
+          <button onClick={onExport} className="min-h-11 rounded-xl border border-[#103d2c]/20 px-4 text-sm font-bold text-[#103d2c]">Exportar JSON</button>
+          <button onClick={onReset} className="min-h-11 rounded-xl border border-[#b42323]/20 px-4 text-sm font-bold text-[#b42323]">Restaurar padrão</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function SettingsCard({ title, description, actionLabel, onAction }: { title: string; description: string; actionLabel?: string; onAction?: () => void }) {
+  return (
+    <article className="rounded-2xl border border-[#103d2c]/8 bg-white p-5 shadow-sm">
+      <h2 className="font-bold text-[#103d2c]">{title}</h2>
+      <p className="mt-2 min-h-10 text-sm leading-5 text-[#68756c]">{description}</p>
+      {actionLabel && onAction ? <button type="button" onClick={onAction} className="mt-4 min-h-11 w-full rounded-xl bg-[#edf3ef] px-4 text-sm font-bold text-[#103d2c] transition hover:bg-[#d7a948]">{actionLabel}</button> : null}
+    </article>
+  );
+}
+
 function OrdersPanel({
   error,
   highlightedOrderId,
-  installAvailable,
-  isAdminAppInstalled,
   loading,
   orders,
-  onInstallAdminApp,
   onRefresh,
   onUpdateStatus,
   onUpdateDeliveryFee,
   onEnableSound,
   onTestSound,
   soundError,
+  soundEnabled,
 }: {
   error: string;
   highlightedOrderId: string | null;
-  installAvailable: boolean;
-  isAdminAppInstalled: boolean;
   loading: boolean;
   orders: OrderRecord[];
-  onInstallAdminApp: () => void;
   onRefresh: () => void | Promise<void>;
   onUpdateStatus: (orderId: string, status: OrderStatus) => void | Promise<void>;
   onUpdateDeliveryFee: (orderId: string, deliveryFee: number) => void | Promise<void>;
   onEnableSound: () => void;
   onTestSound: () => void;
   soundError: string;
+  soundEnabled: boolean;
 }) {
+  const [activeStatus, setActiveStatus] = useState<OrderStatus>("Novo");
+  const filteredOrders = orders.filter((order) => order.status === activeStatus);
+
   return (
     <PanelShell
       title="Pedidos"
       action={
-        <div className="grid w-full gap-2 sm:w-auto sm:grid-cols-2 lg:flex lg:items-center">
+        <div className="grid w-full grid-cols-2 gap-2 sm:w-auto lg:flex lg:items-center">
           <button
             type="button"
             onClick={() => void onRefresh()}
@@ -1265,25 +1401,10 @@ function OrdersPanel({
           </button>
           <button
             type="button"
-            onClick={onInstallAdminApp}
-            disabled={isAdminAppInstalled}
-            title={
-              installAvailable
-                ? "Instalar painel no celular"
-                : "O navegador libera a instalacao quando o PWA esta elegivel"
-            }
-            className="min-h-12 border border-[#4b164c] bg-[#4b164c] px-4 text-sm font-semibold text-white transition hover:bg-[#3b0a45] disabled:cursor-not-allowed disabled:opacity-60 lg:min-h-10"
-          >
-            {isAdminAppInstalled
-              ? "Painel instalado"
-              : "Instalar painel no celular"}
-          </button>
-          <button
-            type="button"
             onClick={onEnableSound}
             className="min-h-12 border border-[#d7a948] bg-[#d7a948] px-4 text-sm font-semibold text-[#103d2c] transition hover:bg-[#f1cf77] lg:min-h-10"
           >
-            Ativar som
+            {soundEnabled ? "Som ativado" : "Ativar som"}
           </button>
           <button
             type="button"
@@ -1296,24 +1417,21 @@ function OrdersPanel({
       }
     >
       <div className="grid gap-4">
+        <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+          {ORDER_STATUSES.map((orderStatus) => {
+            const count = orders.filter((order) => order.status === orderStatus).length;
+            return (
+              <button key={orderStatus} type="button" onClick={() => setActiveStatus(orderStatus)} className={`min-h-11 shrink-0 rounded-xl px-4 text-sm font-bold transition ${activeStatus === orderStatus ? "bg-[#103d2c] text-white" : "bg-[#edf3ef] text-[#425448]"}`}>
+                {orderStatus === "Novo" ? "Novos" : orderStatus} <span className="ml-1 opacity-70">{count}</span>
+              </button>
+            );
+          })}
+        </div>
         {soundError ? (
           <div className="rounded-[8px] border border-[#f8b4b4] bg-[#fff1f2] p-4 text-sm text-[#9f1239]">
             {soundError}
           </div>
         ) : null}
-        <div className="rounded-[8px] border border-[#d7a948]/30 bg-[#fffaf0] p-4">
-          <p className="text-sm font-semibold text-[#103d2c]">
-            WhatsApp Business Cloud API
-          </p>
-          <p className="mt-1 text-sm leading-6 text-[#526354]">
-            Estrutura preparada para envio futuro pelo número{" "}
-            <span className="font-semibold text-[#4b164c]">
-              {WHATSAPP_BUSINESS_PHONE_NUMBER}
-            </span>
-            .
-          </p>
-        </div>
-
         {error ? (
           <div className="rounded-[8px] border border-[#8a1f2d]/30 bg-[#fff0f2] p-4 text-sm text-[#8a1f2d]">
             {error}
@@ -1322,26 +1440,28 @@ function OrdersPanel({
 
         {loading ? <EmptyState label="Carregando pedidos..." /> : null}
 
-        {!loading && orders.length === 0 ? (
-          <EmptyState label="Nenhum pedido recebido ainda." />
+        {!loading && filteredOrders.length === 0 ? (
+          <EmptyState label={`Nenhum pedido em “${activeStatus}”.`} />
         ) : null}
 
         {!loading
-          ? orders.map((order) => (
+          ? filteredOrders.map((order) => (
               <article
                 id={`order-${order.id}`}
                 key={order.id}
-                className={`scroll-mt-32 rounded-[8px] border bg-white p-5 shadow-sm transition md:p-6 ${
-                  highlightedOrderId === order.id
-                    ? "border-[#d7a948] shadow-[0_0_0_3px_rgba(215,169,72,0.24),0_18px_50px_rgba(16,61,44,0.12)]"
+                className={`scroll-mt-32 rounded-2xl border bg-white p-4 shadow-sm transition md:p-6 ${
+                  highlightedOrderId === order.id || order.status === "Novo"
+                    ? "admin-new-order border-[#d7a948] shadow-[0_0_0_3px_rgba(215,169,72,0.18),0_18px_50px_rgba(16,61,44,0.10)]"
                     : "border-[#d7a948]/30"
                 }`}
               >
                 <div className="flex flex-col gap-4 border-b border-[#d7a948]/25 pb-4 lg:flex-row lg:items-start lg:justify-between">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#4b164c]">
-                      Pedido {formatOrderNumber(order.order_number)}
-                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#4b164c]">Pedido {formatOrderNumber(order.order_number)}</p>
+                      {order.status === "Novo" ? <span className="rounded-full bg-[#d7a948] px-2 py-1 text-[10px] font-black text-[#103d2c]">NOVO</span> : null}
+                      <span className="rounded-full bg-[#edf3ef] px-2 py-1 text-[10px] font-bold text-[#526354]">Esperando {formatWaitTime(order.created_at)}</span>
+                    </div>
                     <h3 className="mt-2 text-2xl font-semibold text-[#103d2c] md:text-xl">
                       {order.customer_name}
                     </h3>
@@ -1375,6 +1495,14 @@ function OrdersPanel({
                       ))}
                     </select>
                   </label>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 border-b border-[#d7a948]/25 py-4 sm:flex sm:flex-wrap">
+                  {order.status === "Novo" ? <OrderAction label="Aceitar" onClick={() => void onUpdateStatus(order.id, "Em preparo")} primary /> : null}
+                  {order.status === "Em preparo" ? <OrderAction label="Saiu para entrega" onClick={() => void onUpdateStatus(order.id, "Saiu para entrega")} primary /> : null}
+                  {order.status === "Saiu para entrega" ? <OrderAction label="Finalizar" onClick={() => void onUpdateStatus(order.id, "Finalizado")} primary /> : null}
+                  {order.status !== "Finalizado" && order.status !== "Cancelado" ? <OrderAction label="Cancelar" onClick={() => void onUpdateStatus(order.id, "Cancelado")} danger /> : null}
+                  <a href={getCustomerWhatsAppUrl(order.customer_phone)} target="_blank" rel="noreferrer" className="inline-flex min-h-12 items-center justify-center rounded-xl bg-[#25d366] px-4 text-sm font-bold text-white">Abrir WhatsApp</a>
                 </div>
 
                 <div className="grid gap-4 py-5 lg:grid-cols-3">
@@ -1530,6 +1658,14 @@ function OrderInfoBlock({ label, value }: { label: string; value: string }) {
   );
 }
 
+function OrderAction({ label, onClick, primary = false, danger = false }: { label: string; onClick: () => void; primary?: boolean; danger?: boolean }) {
+  return (
+    <button type="button" onClick={onClick} className={`min-h-12 rounded-xl px-4 text-sm font-bold transition active:scale-[.98] ${primary ? "bg-[#103d2c] text-white hover:bg-[#18573f]" : danger ? "border border-[#c93636]/30 bg-[#fff0f0] text-[#b42323]" : "bg-[#edf3ef] text-[#103d2c]"}`}>
+      {label}
+    </button>
+  );
+}
+
 function PanelShell({
   title,
   action,
@@ -1569,6 +1705,13 @@ function ProductsPanel({
   onSelect: (productId: string) => void;
   onUpdate: (productId: string, patch: Partial<Product>) => void;
 }) {
+  const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const visibleProducts = products.filter((item) =>
+    item.name.toLocaleLowerCase("pt-BR").includes(search.toLocaleLowerCase("pt-BR")) &&
+    (categoryFilter === "all" || item.categoryId === categoryFilter),
+  );
+
   return (
     <PanelShell
       title="Produtos"
@@ -1582,16 +1725,26 @@ function ProductsPanel({
         </button>
       }
     >
-      <div className="grid gap-5 xl:grid-cols-[280px_1fr]">
-        <EntityList
-          items={products.map((item) => ({
-            id: item.id,
-            label: item.name,
-            detail: formatCurrency(item.price),
-          }))}
-          selectedId={selectedProductId}
-          onSelect={onSelect}
-        />
+      <div className="mb-5 grid gap-3 sm:grid-cols-[1fr_220px]">
+        <label className="grid gap-1 text-xs font-bold uppercase tracking-wider text-[#4b164c]">Pesquisar produto<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Digite o nome" className="min-h-12 rounded-xl border border-[#103d2c]/15 bg-white px-4 text-base font-normal normal-case text-[#103d2c] outline-none focus:border-[#d7a948]" /></label>
+        <label className="grid gap-1 text-xs font-bold uppercase tracking-wider text-[#4b164c]">Categoria<select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} className="min-h-12 rounded-xl border border-[#103d2c]/15 bg-white px-4 text-base font-normal normal-case text-[#103d2c]"><option value="all">Todas</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
+      </div>
+      <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
+        <div className="max-h-[70vh] space-y-3 overflow-y-auto pr-1">
+          {visibleProducts.map((item) => (
+            <article key={item.id} className={`rounded-2xl border p-3 transition ${selectedProductId === item.id ? "border-[#d7a948] bg-[#fffaf0]" : "border-[#103d2c]/10 bg-white"}`}>
+              <button type="button" onClick={() => onSelect(item.id)} className="flex w-full items-center gap-3 text-left">
+                <div className="size-14 shrink-0 rounded-xl bg-[#edf3ef] bg-cover bg-center" style={{ backgroundImage: `url(${item.image})`, backgroundPosition: item.imagePosition }} />
+                <div className="min-w-0"><p className="truncate font-bold text-[#103d2c]">{item.name}</p><p className="mt-1 text-xs text-[#68756c]">{categories.find((category) => category.id === item.categoryId)?.name}</p></div>
+              </button>
+              <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
+                <label className="flex min-h-11 items-center rounded-xl border border-[#103d2c]/10 bg-white px-3 text-sm font-bold text-[#4b164c]">R$ <input aria-label={`Preço de ${item.name}`} defaultValue={centsToInput(item.price)} onBlur={(event) => onUpdate(item.id, { price: inputToCents(event.target.value) })} className="min-w-0 flex-1 bg-transparent pl-1 outline-none" /></label>
+                <button type="button" onClick={() => onUpdate(item.id, { active: item.active === false })} className={`min-h-11 rounded-xl px-3 text-xs font-bold ${item.active === false ? "bg-[#fff0f0] text-[#b42323]" : "bg-[#eaf8ef] text-[#14743f]"}`}>{item.active === false ? "Inativo" : "Ativo"}</button>
+              </div>
+            </article>
+          ))}
+          {visibleProducts.length === 0 ? <EmptyState label="Nenhum produto encontrado." /> : null}
+        </div>
 
         {product ? (
           <div className="grid gap-4">

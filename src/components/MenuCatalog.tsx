@@ -18,6 +18,11 @@ import {
   type OrderCustomizationLine,
   type PaymentMethod,
 } from "@/data/orders";
+import {
+  getStoreStatusLabel,
+  type StoreStatusPayload,
+} from "@/data/store-status";
+import { useStoreStatus } from "@/lib/store-status/client";
 
 type SelectionState = Record<string, string[]>;
 
@@ -378,7 +383,15 @@ function parseCatalogSnapshot(snapshot: string) {
   }
 }
 
-export function MenuCatalog() {
+export function MenuCatalog({
+  initialStoreStatus,
+}: {
+  initialStoreStatus?: StoreStatusPayload;
+}) {
+  const storeState = useStoreStatus({
+    initialStatus: initialStoreStatus,
+    poll: true,
+  });
   const catalogSnapshot = useSyncExternalStore(
     subscribeCatalogStore,
     getCatalogSnapshot,
@@ -402,7 +415,11 @@ export function MenuCatalog() {
   const [submitMessage, setSubmitMessage] = useState("");
   const [isCartDrawerOpen, setIsCartDrawerOpen] = useState(false);
 
-  const { categories, complementGroups, products } = catalog;
+  const { categories, complementGroups } = catalog;
+  const products = useMemo(
+    () => catalog.products.filter((product) => product.active !== false),
+    [catalog.products],
+  );
   const cartItems = Object.values(cart);
   const customizableComboCups = useMemo(
     () => getCustomizableComboCups(customizingProduct),
@@ -446,6 +463,8 @@ export function MenuCatalog() {
     0,
   );
   const orderTotal = totalPrice;
+  const isStoreOpen = storeState.status === "open";
+  const storeStatusLabel = getStoreStatusLabel(storeState.status);
   const canCheckout =
     totalItems > 0 &&
     checkout.customerName.trim().length > 0 &&
@@ -723,6 +742,12 @@ export function MenuCatalog() {
   }
 
   async function submitOrder() {
+    if (!isStoreOpen) {
+      setSubmitState("error");
+      setSubmitMessage("No momento estamos fechados. Volte em breve 💜");
+      return;
+    }
+
     if (!canCheckout || submitState === "submitting") {
       return;
     }
@@ -918,12 +943,20 @@ export function MenuCatalog() {
             </p>
           </div>
 
-          <CartTotal
-            totalItems={totalItems}
-            totalPrice={orderTotal}
-            onOpen={openCartDrawer}
-          />
+          <div className="flex flex-col items-stretch gap-3 md:items-end">
+            <StoreStatusBadge
+              isOpen={isStoreOpen}
+              label={storeStatusLabel}
+            />
+            <CartTotal
+              totalItems={totalItems}
+              totalPrice={orderTotal}
+              onOpen={openCartDrawer}
+            />
+          </div>
         </div>
+
+        {!isStoreOpen ? <StoreClosedNotice /> : null}
 
         <div className="sticky top-0 z-10 -mx-4 mt-6 border-y border-[#d7a948]/25 bg-[#fffaf0]/95 px-4 py-3 backdrop-blur md:top-0 md:-mx-8 md:px-8">
           <div className="mx-auto flex max-w-7xl gap-2 overflow-x-auto pb-1">
@@ -991,6 +1024,7 @@ export function MenuCatalog() {
             cartItems={cartItems}
             checkout={checkout}
             canCheckout={canCheckout}
+            isStoreOpen={isStoreOpen}
             subtotal={totalPrice}
             submitMessage={submitMessage}
             submitState={submitState}
@@ -1023,6 +1057,7 @@ export function MenuCatalog() {
               cartItems={cartItems}
               checkout={checkout}
               canCheckout={canCheckout}
+              isStoreOpen={isStoreOpen}
               subtotal={totalPrice}
               submitMessage={submitMessage}
               submitState={submitState}
@@ -1060,6 +1095,35 @@ export function MenuCatalog() {
         />
       ) : null}
     </section>
+  );
+}
+
+function StoreStatusBadge({
+  isOpen,
+  label,
+}: {
+  isOpen: boolean;
+  label: string;
+}) {
+  return (
+    <div
+      className={`inline-flex min-h-10 w-full items-center justify-center gap-2 border px-4 text-sm font-semibold text-white md:w-auto ${
+        isOpen ? "border-[#16a34a] bg-[#16a34a]" : "border-[#dc2626] bg-[#dc2626]"
+      }`}
+    >
+      <span className="size-2 rounded-full bg-white" aria-hidden="true" />
+      {label}
+    </div>
+  );
+}
+
+function StoreClosedNotice() {
+  return (
+    <div className="mt-5 rounded-[8px] border border-[#4b164c]/25 bg-[#4b164c] px-4 py-4 text-white shadow-[0_16px_38px_rgba(75,22,76,0.18)]">
+      <p className="text-sm font-semibold leading-6 sm:text-base">
+        No momento estamos fechados. Volte em breve 💜
+      </p>
+    </div>
   );
 }
 
@@ -1403,6 +1467,7 @@ function OrderSummary({
   cartItems,
   checkout,
   canCheckout,
+  isStoreOpen,
   onClose,
   subtotal,
   submitMessage,
@@ -1417,6 +1482,7 @@ function OrderSummary({
   cartItems: CartItem[];
   checkout: CheckoutForm;
   canCheckout: boolean;
+  isStoreOpen: boolean;
   onClose?: () => void;
   subtotal: number;
   submitMessage: string;
@@ -1689,6 +1755,12 @@ function OrderSummary({
           </div>
         </div>
 
+        {!isStoreOpen ? (
+          <p className="mt-5 rounded-[8px] border border-[#4b164c]/25 bg-[#f7ecf8] px-3 py-3 text-sm font-semibold leading-6 text-[#4b164c]">
+            No momento estamos fechados. Volte em breve 💜
+          </p>
+        ) : null}
+
         {submitMessage ? (
           <p
             className={`mt-5 rounded-[8px] border px-3 py-3 text-sm leading-6 ${
@@ -1703,13 +1775,15 @@ function OrderSummary({
 
         <button
           type="button"
-          disabled={!canCheckout || submitState === "submitting"}
+          disabled={!isStoreOpen || !canCheckout || submitState === "submitting"}
           onClick={onSubmit}
           className="mt-5 min-h-12 w-full border border-[#103d2c] bg-[#103d2c] px-4 text-sm font-semibold text-white transition enabled:hover:border-[#d7a948] enabled:hover:bg-[#d7a948] enabled:hover:text-[#103d2c] disabled:cursor-not-allowed disabled:opacity-45"
         >
           {submitState === "submitting"
             ? "Enviando pedido..."
-            : canCheckout
+            : !isStoreOpen
+              ? "Loja fechada"
+              : canCheckout
               ? "Finalizar pedido"
               : "Preencha os dados"}
         </button>

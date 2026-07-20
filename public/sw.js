@@ -1,4 +1,4 @@
-const CACHE_NAME = "dna-acai-pwa-v2";
+const CACHE_NAME = "dna-acai-pwa-v3";
 const PRECACHE_ASSETS = [
   "/",
   "/admin/pedidos",

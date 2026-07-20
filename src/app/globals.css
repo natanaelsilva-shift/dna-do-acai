@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+@keyframes admin-new-order-glow {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(215, 169, 72, 0.16), 0 12px 32px rgba(16, 61, 44, 0.08); }
+  50% { box-shadow: 0 0 0 4px rgba(215, 169, 72, 0.3), 0 16px 40px rgba(16, 61, 44, 0.12); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .admin-new-order { animation: admin-new-order-glow 2.4s ease-in-out infinite; }
+}
+
 :root {
   --background: #fffaf0;
   --foreground: #16221a;

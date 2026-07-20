@@ -2,6 +2,9 @@ import Image from "next/image";
 import { ClientPwaInstall } from "@/components/ClientPwaInstall";
 import { MenuCatalog } from "@/components/MenuCatalog";
 import { categories, productImages } from "@/data/menu";
+import { getLocalStoreStatus } from "@/lib/store-status/local-store";
+
+export const dynamic = "force-dynamic";
 
 const aboutFeatures = [
   {
@@ -145,7 +148,9 @@ function AboutFeatureIcon({
   );
 }
 
-export default function Home() {
+export default async function Home() {
+  const initialStoreStatus = await getLocalStoreStatus();
+
   return (
     <main className="min-h-screen overflow-x-clip bg-[#fffaf0] text-[#16221a]">
       <header className="absolute left-0 right-0 top-0 z-20">
@@ -323,7 +328,7 @@ export default function Home() {
         </div>
       </section>
 
-      <MenuCatalog />
+      <MenuCatalog initialStoreStatus={initialStoreStatus} />
 
       <section
         id="sobre"
