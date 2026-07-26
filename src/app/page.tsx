@@ -2,7 +2,7 @@ import Image from "next/image";
 import { ClientPwaInstall } from "@/components/ClientPwaInstall";
 import { MenuCatalog } from "@/components/MenuCatalog";
 import { categories, productImages } from "@/data/menu";
-import { getLocalStoreStatus } from "@/lib/store-status/local-store";
+import { getStoreStatus } from "@/lib/store-status/server";
 
 export const dynamic = "force-dynamic";
 
@@ -149,7 +149,7 @@ function AboutFeatureIcon({
 }
 
 export default async function Home() {
-  const initialStoreStatus = await getLocalStoreStatus();
+  const initialStoreStatus = await getStoreStatus().catch(() => undefined);
 
   return (
     <main className="min-h-screen overflow-x-clip bg-[#fffaf0] text-[#16221a]">

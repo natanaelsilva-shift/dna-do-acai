@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 import { isStoreStatus, type StoreStatus } from "@/data/store-status";
-import {
-  getLocalStoreStatus,
-  updateLocalStoreStatus,
-} from "@/lib/store-status/local-store";
+import { getStoreStatus, updateStoreStatus } from "@/lib/store-status/server";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +12,9 @@ function asRecord(value: unknown) {
 
 export async function GET() {
   try {
-    return NextResponse.json(await getLocalStoreStatus());
+    return NextResponse.json(await getStoreStatus(), {
+      headers: { "Cache-Control": "no-store, max-age=0" },
+    });
   } catch (error) {
     const message =
       error instanceof Error
@@ -38,9 +37,11 @@ export async function PATCH(request: Request) {
       );
     }
 
-    const data = await updateLocalStoreStatus(status as StoreStatus);
+    const data = await updateStoreStatus(status as StoreStatus);
 
-    return NextResponse.json(data);
+    return NextResponse.json(data, {
+      headers: { "Cache-Control": "no-store, max-age=0" },
+    });
   } catch (error) {
     const message =
       error instanceof Error

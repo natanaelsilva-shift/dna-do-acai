@@ -7,12 +7,8 @@ import {
   type OrderItem,
   type PaymentMethod,
 } from "@/data/orders";
-import {
-  createLocalOrder,
-  listLocalOrders,
-} from "@/lib/orders/local-store";
-import { getLocalStoreStatus } from "@/lib/store-status/local-store";
-import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
+import { getStoreStatus } from "@/lib/store-status/server";
+import { createClient } from "@/lib/supabase/server";
 import { buildWhatsAppBusinessOrderPayload } from "@/lib/whatsapp/business";
 
 export const dynamic = "force-dynamic";
@@ -144,10 +140,6 @@ function validateOrder(order: CreateOrderPayload) {
 
 export async function GET() {
   try {
-    if (!isSupabaseConfigured()) {
-      return NextResponse.json({ orders: await listLocalOrders() });
-    }
-
     const supabase = await createClient();
     const { data, error } = await supabase
       .from("orders")
@@ -169,7 +161,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const storeStatus = await getLocalStoreStatus();
+    const storeStatus = await getStoreStatus();
 
     if (storeStatus.status === "closed") {
       return NextResponse.json(
@@ -183,23 +175,6 @@ export async function POST(request: Request) {
 
     if (validationError) {
       return NextResponse.json({ error: validationError }, { status: 400 });
-    }
-
-    if (!isSupabaseConfigured()) {
-      const localOrder = await createLocalOrder(order);
-
-      return NextResponse.json(
-        {
-          order: {
-            id: localOrder.id,
-            order_number: localOrder.order_number,
-            created_at: localOrder.created_at,
-            status: localOrder.status,
-          },
-          storage: "local",
-        },
-        { status: 201 },
-      );
     }
 
     const supabase = await createClient();

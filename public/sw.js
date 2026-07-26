@@ -1,4 +1,4 @@
-const CACHE_NAME = "dna-acai-pwa-v3";
+const CACHE_NAME = "dna-acai-pwa-v4";
 const PRECACHE_ASSETS = [
   "/",
   "/admin/pedidos",
@@ -64,11 +64,13 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     fetch(request)
       .then((response) => {
-        const responseToCache = response.clone();
-        caches
-          .open(CACHE_NAME)
-          .then((cache) => cache.put(request, responseToCache))
-          .catch(() => undefined);
+        if (response.ok) {
+          const responseToCache = response.clone();
+          caches
+            .open(CACHE_NAME)
+            .then((cache) => cache.put(request, responseToCache))
+            .catch(() => undefined);
+        }
 
         return response;
       })

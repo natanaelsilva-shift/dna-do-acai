@@ -68,6 +68,11 @@ export type OrderRecord = {
   status: OrderStatus;
   whatsapp_business_phone: string;
   whatsapp_payload: Record<string, unknown> | null;
+  printed_at?: string | null;
+  print_status?: "pending" | "printing" | "printed" | "failed" | null;
+  print_attempts?: number;
+  print_error?: string | null;
+  print_updated_at?: string | null;
 };
 
 export function isOrderStatus(value: string): value is OrderStatus {

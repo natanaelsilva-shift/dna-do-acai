@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { isOrderStatus, type OrderStatus } from "@/data/orders";
-import { updateLocalOrder } from "@/lib/orders/local-store";
-import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 
 type RouteContext = {
   params: Promise<{
@@ -37,15 +36,6 @@ export async function PATCH(request: Request, context: RouteContext) {
     if (status) updateData.status = status;
     if (deliveryFee !== undefined) {
       updateData.delivery_fee = deliveryFee;
-    }
-
-    if (!isSupabaseConfigured()) {
-      const localOrder = await updateLocalOrder(id, {
-        status,
-        delivery_fee: deliveryFee,
-      });
-
-      return NextResponse.json({ order: localOrder, storage: "local" });
     }
 
     const supabase = await createClient();

@@ -37,9 +37,21 @@ import {
   type StoreStatusPayload,
 } from "@/data/store-status";
 import {
-  setStoreStatus,
   useStoreStatus,
 } from "@/lib/store-status/client";
+import {
+  DEFAULT_PRINTER_PREFERENCES,
+  connectQzTray,
+  friendlyPrinterError,
+  isQzConnected,
+  loadPrinterPreferences,
+  printOrderReceipt,
+  printTestReceipt,
+  savePrinterPreferences,
+  supportsAutomaticPrinting,
+  type PrinterConnectionState,
+  type PrinterPreferences,
+} from "@/services/printerService";
 
 type AdminTab =
   | "home"
@@ -220,6 +232,15 @@ export function AdminDashboard({
     visible: boolean;
   } | null>(null);
   const [highlightedOrderId, setHighlightedOrderId] = useState<string | null>(null);
+  const [printerPreferences, setPrinterPreferences] = useState<PrinterPreferences>(
+    DEFAULT_PRINTER_PREFERENCES,
+  );
+  const [printerPreferencesLoaded, setPrinterPreferencesLoaded] = useState(false);
+  const [printerConnection, setPrinterConnection] =
+    useState<PrinterConnectionState>("disconnected");
+  const [availablePrinters, setAvailablePrinters] = useState<string[]>([]);
+  const [printerMessage, setPrinterMessage] = useState("QZ Tray desconectado.");
+  const [printingOrderIds, setPrintingOrderIds] = useState<Set<string>>(new Set());
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const latestOrdersRef = useRef<OrderRecord[]>(initialOrders);
   const knownOrderIds = useRef<Set<string>>(
@@ -228,7 +249,10 @@ export function AdminDashboard({
   const notifiedOrderIds = useRef<Set<string>>(new Set());
   const soundEnabledRef = useRef(false);
   const isFetchingOrdersRef = useRef(false);
+  const printerPreferencesRef = useRef(printerPreferences);
+  const printQueueRef = useRef<Promise<void>>(Promise.resolve());
   const isStoreOpen = storeState.status === "open";
+  const isStoreStatusKnown = storeState.status !== null;
 
   const selectedProduct =
     catalog.products.find((product) => product.id === selectedProductId) ??
@@ -252,6 +276,18 @@ export function AdminDashboard({
   useEffect(() => {
     soundEnabledRef.current = soundEnabled;
   }, [soundEnabled]);
+
+  useEffect(() => {
+    const preferences = loadPrinterPreferences();
+    printerPreferencesRef.current = preferences;
+    setPrinterPreferences(preferences);
+    setPrinterPreferencesLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    printerPreferencesRef.current = printerPreferences;
+    if (printerPreferencesLoaded) savePrinterPreferences(printerPreferences);
+  }, [printerPreferences, printerPreferencesLoaded]);
 
   useEffect(() => {
     if (!("serviceWorker" in navigator)) {
@@ -372,6 +408,167 @@ export function AdminDashboard({
     await playOrderSound();
   }, [playOrderSound]);
 
+  const connectPrinter = useCallback(async () => {
+    setPrinterConnection("connecting");
+    setPrinterMessage("Conectando ao QZ Tray...");
+    try {
+      const printers = await connectQzTray();
+      setAvailablePrinters(printers);
+      setPrinterConnection("connected");
+      setPrinterMessage(
+        printers.length > 0
+          ? `${printers.length} impressora${printers.length === 1 ? "" : "s"} encontrada${printers.length === 1 ? "" : "s"}.`
+          : "QZ Tray conectado, mas nenhuma impressora foi encontrada.",
+      );
+      if (!printerPreferencesRef.current.printerName && printers.length === 1) {
+        setPrinterPreferences((current) => ({ ...current, printerName: printers[0] }));
+      }
+      return printers;
+    } catch (error) {
+      const message = friendlyPrinterError(error);
+      setPrinterConnection("error");
+      setPrinterMessage(message);
+      throw error;
+    }
+  }, []);
+
+  const testPrinter = useCallback(async () => {
+    const preferences = printerPreferencesRef.current;
+    try {
+      if (!isQzConnected()) await connectPrinter();
+      setPrinterMessage("Enviando impressão de teste...");
+      await printTestReceipt(preferences);
+      setPrinterMessage("Impressão de teste concluída.");
+    } catch (error) {
+      setPrinterMessage(friendlyPrinterError(error));
+    }
+  }, [connectPrinter]);
+
+  useEffect(() => {
+    if (
+      printerPreferencesLoaded &&
+      printerPreferences.automaticPrinting &&
+      printerPreferences.printerName
+    ) {
+      void connectPrinter().catch(() => undefined);
+    }
+  }, [connectPrinter, printerPreferences.automaticPrinting, printerPreferences.printerName, printerPreferencesLoaded]);
+
+  const recordPrintAction = useCallback(
+    async (orderId: string, action: "claim" | "complete" | "fail" | "reprint", error?: string) => {
+      const response = await fetch(`/api/orders/${orderId}/print`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, error }),
+      });
+      const body = (await response.json()) as { claimed?: boolean; error?: string };
+      if (!response.ok) throw new Error(body.error ?? "Não foi possível registrar a impressão.");
+      return body;
+    },
+    [],
+  );
+
+  const performOrderPrint = useCallback(
+    async (
+      order: OrderRecord,
+      options: { reprint?: boolean; trigger: "receive" | "accept" | "manual" },
+    ) => {
+      const preferences = printerPreferencesRef.current;
+      const automatic = options.trigger !== "manual";
+
+      if (
+        automatic &&
+        (!supportsAutomaticPrinting() ||
+          !preferences.automaticPrinting ||
+          (options.trigger === "receive" && !preferences.printOnReceive) ||
+          (options.trigger === "accept" && !preferences.printOnAccept))
+      ) {
+        return;
+      }
+
+      if (automatic && order.printed_at) {
+        return;
+      }
+
+      const reprint = !automatic && (options.reprint === true || Boolean(order.printed_at));
+      let claimed = reprint;
+
+      try {
+        if (reprint) {
+          await recordPrintAction(order.id, "reprint");
+        } else {
+          const claim = await recordPrintAction(order.id, "claim");
+          claimed = claim.claimed === true;
+          if (!claimed) {
+            if (!automatic) setPrinterMessage("Esta comanda já foi impressa ou está sendo impressa em outro computador.");
+            return;
+          }
+        }
+
+        setPrintingOrderIds((current) => new Set(current).add(order.id));
+        setPrinterMessage(`Imprimindo pedido ${formatOrderNumber(order.order_number)}...`);
+
+        if (!isQzConnected()) await connectPrinter();
+        if (preferences.playSoundBeforePrint) await playOrderSound();
+        await printOrderReceipt(order, preferences, reprint);
+
+        if (!reprint) await recordPrintAction(order.id, "complete");
+        const printedAt = new Date().toISOString();
+        setOrders((current) =>
+          current.map((currentOrder) =>
+            currentOrder.id === order.id
+              ? {
+                  ...currentOrder,
+                  printed_at: reprint ? currentOrder.printed_at : printedAt,
+                  print_status: "printed",
+                  print_error: null,
+                  print_attempts: reprint
+                    ? (currentOrder.print_attempts ?? 0) + 1
+                    : Math.max(currentOrder.print_attempts ?? 0, (order.print_attempts ?? 0) + 1),
+                  print_updated_at: printedAt,
+                }
+              : currentOrder,
+          ),
+        );
+        setPrinterMessage(
+          `${reprint ? "Reimpressão" : "Impressão"} do pedido ${formatOrderNumber(order.order_number)} concluída.`,
+        );
+      } catch (error) {
+        const message = friendlyPrinterError(error);
+        if (claimed && !reprint) {
+          void recordPrintAction(order.id, "fail", message).catch(() => undefined);
+          setOrders((current) =>
+            current.map((currentOrder) =>
+              currentOrder.id === order.id
+                ? { ...currentOrder, print_status: "failed", print_error: message }
+                : currentOrder,
+            ),
+          );
+        }
+        setPrinterConnection(isQzConnected() ? "connected" : "error");
+        setPrinterMessage(message);
+      } finally {
+        setPrintingOrderIds((current) => {
+          const next = new Set(current);
+          next.delete(order.id);
+          return next;
+        });
+      }
+    },
+    [connectPrinter, playOrderSound, recordPrintAction],
+  );
+
+  const queueOrderPrint = useCallback(
+    (order: OrderRecord, options: { reprint?: boolean; trigger: "receive" | "accept" | "manual" }) => {
+      const job = printQueueRef.current
+        .catch(() => undefined)
+        .then(() => performOrderPrint(order, options));
+      printQueueRef.current = job;
+      return job;
+    },
+    [performOrderPrint],
+  );
+
   const installAdminPwa = useCallback(async () => {
     if (isAdminAppInstalled) {
       setStatus("Painel admin ja esta instalado no celular.");
@@ -423,8 +620,9 @@ export function AdminDashboard({
       }
       console.log("Novo pedido detectado");
       void playNewOrderSound();
+      void queueOrderPrint(order, { trigger: "receive" });
     },
-    [playNewOrderSound],
+    [playNewOrderSound, queueOrderPrint],
   );
 
   const dashboardMetrics = useMemo(() => {
@@ -465,7 +663,7 @@ export function AdminDashboard({
 
       nextOrders.forEach((order) => knownOrderIds.current.add(order.id));
 
-      const newOrderToNotify = newOrders.find(
+      const newOrdersToNotify = newOrders.filter(
         (order) =>
           order.status === "Novo" && !notifiedOrderIds.current.has(order.id),
       );
@@ -476,18 +674,14 @@ export function AdminDashboard({
         }
       });
 
-      if (newOrderToNotify) {
-        notifyNewOrder(newOrderToNotify);
-        return true;
-      }
-
-      return false;
+      newOrdersToNotify.forEach(notifyNewOrder);
+      return newOrdersToNotify.length > 0;
     },
     [notifyNewOrder],
   );
 
   const loadOrders = useCallback(
-    async ({ silent = false } = {}) => {
+    async ({ silent = false, detectNew = true } = {}) => {
       if (isFetchingOrdersRef.current) {
         return;
       }
@@ -501,7 +695,13 @@ export function AdminDashboard({
 
       try {
         const nextOrders = await fetchOrders();
-        const hasNewOrder = checkForNewOrders(nextOrders);
+        const hasNewOrder = detectNew ? checkForNewOrders(nextOrders) : false;
+        if (!detectNew) {
+          nextOrders.forEach((order) => {
+            knownOrderIds.current.add(order.id);
+            if (order.status === "Novo") notifiedOrderIds.current.add(order.id);
+          });
+        }
 
         setOrders(nextOrders);
         latestOrdersRef.current = nextOrders;
@@ -668,6 +868,7 @@ export function AdminDashboard({
 
   const updateOrderStatus = useCallback(
     async (orderId: string, nextStatus: OrderStatus) => {
+      const previousOrder = latestOrdersRef.current.find((order) => order.id === orderId);
       try {
         const response = await fetch(`/api/orders/${orderId}`, {
           method: "PATCH",
@@ -700,6 +901,9 @@ export function AdminDashboard({
           );
         }
         setStatus(`Pedido #${body.order.order_number} atualizado para ${nextStatus}.`);
+        if (previousOrder?.status === "Novo" && nextStatus === "Em preparo") {
+          void queueOrderPrint(body.order, { trigger: "accept" });
+        }
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Não foi possível atualizar o pedido.";
@@ -708,7 +912,7 @@ export function AdminDashboard({
         setStatus(message);
       }
     },
-    [],
+    [queueOrderPrint],
   );
 
   function updateCatalog(updater: (currentCatalog: CatalogData) => CatalogData) {
@@ -952,10 +1156,14 @@ export function AdminDashboard({
   }
 
   async function toggleStoreStatus() {
+    if (storeState.isUpdating || !isStoreStatusKnown) {
+      return;
+    }
+
     const nextStatus: StoreStatus = isStoreOpen ? "closed" : "open";
 
     try {
-      const updatedStatus = await setStoreStatus(nextStatus);
+      const updatedStatus = await storeState.setStatus(nextStatus);
       setStatus(`${getStoreStatusLabel(updatedStatus.status)} publicada.`);
     } catch (error) {
       const message =
@@ -989,9 +1197,9 @@ export function AdminDashboard({
             </div>
           </div>
           <div className="grid min-w-0 flex-1 grid-cols-5 items-center justify-items-end gap-1 sm:flex sm:justify-end sm:gap-2">
-            <button type="button" onClick={() => void toggleStoreStatus()} className={`inline-flex min-h-11 w-full items-center justify-center gap-1 rounded-xl px-1 text-xs font-bold sm:w-auto sm:gap-2 sm:px-3 sm:text-sm ${isStoreOpen ? "bg-[#178a4b]" : "bg-[#c93636]"}`}>
+            <button type="button" disabled={storeState.isUpdating || !isStoreStatusKnown} onClick={() => void toggleStoreStatus()} className={`inline-flex min-h-11 w-full items-center justify-center gap-1 rounded-xl px-1 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:gap-2 sm:px-3 sm:text-sm ${!isStoreStatusKnown ? "bg-[#647069]" : isStoreOpen ? "bg-[#178a4b]" : "bg-[#c93636]"}`}>
               <span className="hidden size-2.5 rounded-full bg-white sm:block" />
-              <span className="hidden sm:inline">Loja </span>{isStoreOpen ? "aberta" : "fechada"}
+              <span className="hidden sm:inline">Loja </span>{!isStoreStatusKnown ? "indisponível" : isStoreOpen ? "aberta" : "fechada"}
             </button>
             <button type="button" onClick={() => setActiveTab("orders")} title="Ver novos pedidos" aria-label={`${newOrdersCount} pedidos novos`} className="relative grid size-11 place-items-center rounded-xl bg-white/10 text-lg transition hover:bg-white/20">☷{newOrdersCount > 0 ? <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-[#d7a948] px-1 text-[10px] font-black leading-5 text-[#103d2c]">{newOrdersCount}</span> : null}</button>
             <button type="button" onClick={() => void enableOrderSound()} title="Ativar som de pedidos" aria-label="Ativar som de pedidos" className={`grid size-11 place-items-center rounded-xl text-lg transition ${soundEnabled ? "bg-[#d7a948] text-[#103d2c]" : "bg-white/10 hover:bg-white/20"}`}>♫</button>
@@ -1026,7 +1234,7 @@ export function AdminDashboard({
             <DashboardOverview
               averageTicket={dashboardMetrics.averageTicket}
               finished={dashboardMetrics.finished}
-              isStoreOpen={isStoreOpen}
+              storeStatus={storeState.status}
               newOrders={newOrdersCount}
               preparing={dashboardMetrics.preparing}
               revenue={dashboardMetrics.revenue}
@@ -1045,7 +1253,12 @@ export function AdminDashboard({
               highlightedOrderId={highlightedOrderId}
               loading={ordersLoading}
               orders={orders}
-              onRefresh={loadOrders}
+              onRefresh={() => loadOrders({ detectNew: false })}
+              onPrint={(order, reprint) =>
+                queueOrderPrint(order, { trigger: "manual", reprint })
+              }
+              printingOrderIds={printingOrderIds}
+              printerMessage={printerMessage}
               onUpdateStatus={updateOrderStatus}
               onUpdateDeliveryFee={updateOrderDeliveryFee}
               onEnableSound={() => void enableOrderSound()}
@@ -1071,7 +1284,7 @@ export function AdminDashboard({
           {activeTab === "settings" ? (
             <SettingsPanel
               isAdminAppInstalled={isAdminAppInstalled}
-              isStoreOpen={isStoreOpen}
+              storeStatus={storeState.status}
               soundEnabled={soundEnabled}
               onEnableSound={() => void enableOrderSound()}
               onExport={exportCatalog}
@@ -1081,6 +1294,19 @@ export function AdminDashboard({
               onReset={resetCatalog}
               onTestSound={() => void testOrderSound()}
               onToggleStore={() => void toggleStoreStatus()}
+              printerSettings={
+                <PrinterSettingsPanel
+                  availablePrinters={availablePrinters}
+                  connection={printerConnection}
+                  message={printerMessage}
+                  preferences={printerPreferences}
+                  onChange={(patch) =>
+                    setPrinterPreferences((current) => ({ ...current, ...patch }))
+                  }
+                  onConnect={() => void connectPrinter().catch(() => undefined)}
+                  onTest={() => void testPrinter()}
+                />
+              }
             />
           ) : null}
 
@@ -1224,7 +1450,7 @@ export function AdminDashboard({
 function DashboardOverview({
   averageTicket,
   finished,
-  isStoreOpen,
+  storeStatus,
   newOrders,
   preparing,
   revenue,
@@ -1237,7 +1463,7 @@ function DashboardOverview({
 }: {
   averageTicket: number;
   finished: number;
-  isStoreOpen: boolean;
+  storeStatus: StoreStatus | null;
   newOrders: number;
   preparing: number;
   revenue: number;
@@ -1248,17 +1474,19 @@ function DashboardOverview({
   onTestSound: () => void;
   onToggleStore: () => void;
 }) {
+  const isStoreOpen = storeStatus === "open";
+  const isStoreStatusKnown = storeStatus !== null;
   const metrics = [
     { label: "Pedidos novos", value: String(newOrders), tone: "text-[#b45309] bg-[#fff7e6]" },
     { label: "Em preparo", value: String(preparing), tone: "text-[#5b21b6] bg-[#f4f0ff]" },
     { label: "Finalizados hoje", value: String(finished), tone: "text-[#14743f] bg-[#eaf8ef]" },
     { label: "Faturamento do dia", value: formatCurrency(revenue), tone: "text-[#103d2c] bg-[#e9f1ec]" },
     { label: "Ticket médio", value: formatCurrency(averageTicket), tone: "text-[#4b164c] bg-[#f6edf6]" },
-    { label: "Status da loja", value: isStoreOpen ? "Aberta" : "Fechada", tone: isStoreOpen ? "text-[#14743f] bg-[#eaf8ef]" : "text-[#b42323] bg-[#fff0f0]" },
+    { label: "Status da loja", value: !isStoreStatusKnown ? "Indisponível" : isStoreOpen ? "Aberta" : "Fechada", tone: !isStoreStatusKnown ? "text-[#526354] bg-[#edf0ee]" : isStoreOpen ? "text-[#14743f] bg-[#eaf8ef]" : "text-[#b42323] bg-[#fff0f0]" },
   ];
   const actions = [
     { label: "Ver pedidos novos", detail: `${newOrders} aguardando ação`, action: onGoOrders },
-    { label: isStoreOpen ? "Fechar loja" : "Abrir loja", detail: "Atualiza imediatamente", action: onToggleStore },
+    { label: !isStoreStatusKnown ? "Status indisponível" : isStoreOpen ? "Fechar loja" : "Abrir loja", detail: isStoreStatusKnown ? "Atualiza imediatamente" : "Verifique a conexão com o banco", action: onToggleStore },
     { label: "Cadastrar produto", detail: "Adicionar ao cardápio", action: onAddProduct },
     { label: "Alterar preços", detail: "Gerenciar produtos", action: onGoProducts },
     { label: "Ativar som", detail: "Liberar alertas", action: onEnableSound },
@@ -1295,9 +1523,81 @@ function DashboardOverview({
   );
 }
 
+function PrinterSettingsPanel({
+  availablePrinters,
+  connection,
+  message,
+  preferences,
+  onChange,
+  onConnect,
+  onTest,
+}: {
+  availablePrinters: string[];
+  connection: PrinterConnectionState;
+  message: string;
+  preferences: PrinterPreferences;
+  onChange: (patch: Partial<PrinterPreferences>) => void;
+  onConnect: () => void;
+  onTest: () => void;
+}) {
+  const connected = connection === "connected";
+  const fieldClass = "min-h-12 rounded-xl border border-[#103d2c]/15 bg-white px-3 text-sm font-semibold text-[#103d2c] outline-none focus:border-[#d7a948]";
+
+  return (
+    <section className="rounded-2xl border border-[#4b164c]/15 bg-white p-4 shadow-sm md:p-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-[#4b164c]">Impressora de pedidos</p>
+          <h2 className="mt-1 text-xl font-bold text-[#103d2c]">Comandas térmicas com QZ Tray</h2>
+          <p className="mt-2 text-sm text-[#68756c]">Configure no computador da loja. Celulares mantêm apenas a impressão manual.</p>
+        </div>
+        <div className={`inline-flex min-h-10 items-center gap-2 self-start rounded-full px-3 text-xs font-bold ${connected ? "bg-[#eaf8ef] text-[#14743f]" : connection === "error" ? "bg-[#fff0f0] text-[#b42323]" : "bg-[#edf0ee] text-[#526354]"}`}>
+          <span className={`size-2 rounded-full ${connected ? "bg-[#178a4b]" : connection === "connecting" ? "bg-[#d7a948]" : "bg-[#c93636]"}`} />
+          {connection === "connecting" ? "Conectando" : connected ? "QZ Tray conectado" : "QZ Tray desconectado"}
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+        <label className="grid gap-1.5 text-xs font-bold uppercase tracking-wider text-[#4b164c]">
+          Impressora
+          <select value={preferences.printerName} onChange={(event) => onChange({ printerName: event.target.value })} className={fieldClass}>
+            <option value="">Selecione uma impressora</option>
+            {availablePrinters.map((printer) => <option key={printer} value={printer}>{printer}</option>)}
+          </select>
+        </label>
+        <div className="grid grid-cols-2 gap-2 self-end">
+          <button type="button" onClick={onConnect} className="min-h-12 rounded-xl bg-[#103d2c] px-3 text-sm font-bold text-white">Conectar impressora</button>
+          <button type="button" onClick={onTest} disabled={!preferences.printerName} className="min-h-12 rounded-xl border border-[#4b164c]/20 bg-[#f6edf6] px-3 text-sm font-bold text-[#4b164c] disabled:opacity-50">Testar impressão</button>
+        </div>
+        <label className="grid gap-1.5 text-xs font-bold uppercase tracking-wider text-[#4b164c]">Largura do papel<select value={preferences.paperWidth} onChange={(event) => onChange({ paperWidth: Number(event.target.value) as 58 | 80 })} className={fieldClass}><option value={58}>58 mm</option><option value={80}>80 mm</option></select></label>
+        <label className="grid gap-1.5 text-xs font-bold uppercase tracking-wider text-[#4b164c]">Quantidade de vias<select value={preferences.copies} onChange={(event) => onChange({ copies: Number(event.target.value) as 1 | 2 })} className={fieldClass}><option value={1}>1 via</option><option value={2}>2 vias</option></select></label>
+        <label className="grid gap-1.5 text-xs font-bold uppercase tracking-wider text-[#4b164c]">Formato<select value={preferences.mode} onChange={(event) => onChange({ mode: event.target.value as PrinterPreferences["mode"] })} className={fieldClass}><option value="escpos">ESC/POS (recomendado)</option><option value="html">HTML compatível</option></select></label>
+      </div>
+
+      <div className="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <PrinterToggle label="Impressão automática" checked={preferences.automaticPrinting} onChange={(checked) => onChange({ automaticPrinting: checked })} />
+        <PrinterToggle label="Tocar som antes" checked={preferences.playSoundBeforePrint} onChange={(checked) => onChange({ playSoundBeforePrint: checked })} />
+        <PrinterToggle label="Imprimir ao receber" checked={preferences.printOnReceive} onChange={(checked) => onChange({ printOnReceive: checked })} />
+        <PrinterToggle label="Imprimir ao aceitar" checked={preferences.printOnAccept} onChange={(checked) => onChange({ printOnAccept: checked })} />
+      </div>
+
+      <p aria-live="polite" className={`mt-4 rounded-xl p-3 text-sm font-semibold ${connection === "error" || message.toLocaleLowerCase("pt-BR").includes("falha") ? "bg-[#fff0f0] text-[#b42323]" : "bg-[#edf3ef] text-[#425448]"}`}>{message}</p>
+    </section>
+  );
+}
+
+function PrinterToggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
+  return (
+    <label className="flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-xl border border-[#103d2c]/10 bg-[#fafbf9] px-3 text-sm font-bold text-[#103d2c]">
+      <span>{label}</span>
+      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="size-5 accent-[#103d2c]" />
+    </label>
+  );
+}
+
 function SettingsPanel({
   isAdminAppInstalled,
-  isStoreOpen,
+  storeStatus,
   soundEnabled,
   onEnableSound,
   onExport,
@@ -1307,9 +1607,10 @@ function SettingsPanel({
   onReset,
   onTestSound,
   onToggleStore,
+  printerSettings,
 }: {
   isAdminAppInstalled: boolean;
-  isStoreOpen: boolean;
+  storeStatus: StoreStatus | null;
   soundEnabled: boolean;
   onEnableSound: () => void;
   onExport: () => void;
@@ -1319,16 +1620,20 @@ function SettingsPanel({
   onReset: () => void;
   onTestSound: () => void;
   onToggleStore: () => void;
+  printerSettings: ReactNode;
 }) {
+  const isStoreOpen = storeStatus === "open";
+  const isStoreStatusKnown = storeStatus !== null;
   return (
     <div className="space-y-5">
       <div><p className="text-sm font-bold uppercase tracking-[0.14em] text-[#8a6a26]">Administração</p><h1 className="mt-1 text-2xl font-bold text-[#103d2c] md:text-3xl">Configurações</h1></div>
+      {printerSettings}
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <SettingsCard title="Dados da loja" description="Identidade e informações públicas." />
         <SettingsCard title="WhatsApp" description={`Atendimento: ${WHATSAPP_BUSINESS_PHONE_NUMBER}`} />
         <SettingsCard title="Instagram" description="Dados de contato e rede social." />
         <SettingsCard title="Horário de funcionamento" description="Consulte e organize os horários da loja." />
-        <SettingsCard title="Status da loja" description={isStoreOpen ? "A loja está recebendo pedidos." : "Novos pedidos estão bloqueados."} actionLabel={isStoreOpen ? "Fechar loja" : "Abrir loja"} onAction={onToggleStore} />
+        <SettingsCard title="Status da loja" description={!isStoreStatusKnown ? "Não foi possível consultar o banco de dados." : isStoreOpen ? "A loja está recebendo pedidos." : "Novos pedidos estão bloqueados."} actionLabel={!isStoreStatusKnown ? undefined : isStoreOpen ? "Fechar loja" : "Abrir loja"} onAction={onToggleStore} />
         <SettingsCard title="Som de pedidos" description={soundEnabled ? "Alertas sonoros ativados." : "Toque para liberar o áudio neste aparelho."} actionLabel={soundEnabled ? "Testar som" : "Ativar som"} onAction={soundEnabled ? onTestSound : onEnableSound} />
         <SettingsCard title="Adicionais pagos" description="Preços dos adicionais e opções extras." actionLabel="Gerenciar" onAction={() => onNavigate("complements")} />
         <SettingsCard title="Complementos" description="Grupos, limites e opções existentes." actionLabel="Gerenciar" onAction={() => onNavigate("complements")} />
@@ -1364,6 +1669,7 @@ function OrdersPanel({
   highlightedOrderId,
   loading,
   orders,
+  onPrint,
   onRefresh,
   onUpdateStatus,
   onUpdateDeliveryFee,
@@ -1371,11 +1677,14 @@ function OrdersPanel({
   onTestSound,
   soundError,
   soundEnabled,
+  printingOrderIds,
+  printerMessage,
 }: {
   error: string;
   highlightedOrderId: string | null;
   loading: boolean;
   orders: OrderRecord[];
+  onPrint: (order: OrderRecord, reprint: boolean) => void | Promise<void>;
   onRefresh: () => void | Promise<void>;
   onUpdateStatus: (orderId: string, status: OrderStatus) => void | Promise<void>;
   onUpdateDeliveryFee: (orderId: string, deliveryFee: number) => void | Promise<void>;
@@ -1383,6 +1692,8 @@ function OrdersPanel({
   onTestSound: () => void;
   soundError: string;
   soundEnabled: boolean;
+  printingOrderIds: Set<string>;
+  printerMessage: string;
 }) {
   const [activeStatus, setActiveStatus] = useState<OrderStatus>("Novo");
   const filteredOrders = orders.filter((order) => order.status === activeStatus);
@@ -1443,6 +1754,11 @@ function OrdersPanel({
         {!loading && filteredOrders.length === 0 ? (
           <EmptyState label={`Nenhum pedido em “${activeStatus}”.`} />
         ) : null}
+        {printerMessage ? (
+          <div className="rounded-xl border border-[#103d2c]/10 bg-[#edf3ef] p-3 text-sm font-semibold text-[#425448]">
+            Impressora: {printerMessage}
+          </div>
+        ) : null}
 
         {!loading
           ? filteredOrders.map((order) => (
@@ -1460,6 +1776,8 @@ function OrdersPanel({
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#4b164c]">Pedido {formatOrderNumber(order.order_number)}</p>
                       {order.status === "Novo" ? <span className="rounded-full bg-[#d7a948] px-2 py-1 text-[10px] font-black text-[#103d2c]">NOVO</span> : null}
+                      {order.printed_at ? <span className="rounded-full bg-[#eaf8ef] px-2 py-1 text-[10px] font-bold text-[#14743f]">IMPRESSO</span> : null}
+                      {order.print_status === "failed" ? <span className="rounded-full bg-[#fff0f0] px-2 py-1 text-[10px] font-bold text-[#b42323]">FALHA NA IMPRESSÃO</span> : null}
                       <span className="rounded-full bg-[#edf3ef] px-2 py-1 text-[10px] font-bold text-[#526354]">Esperando {formatWaitTime(order.created_at)}</span>
                     </div>
                     <h3 className="mt-2 text-2xl font-semibold text-[#103d2c] md:text-xl">
@@ -1502,8 +1820,12 @@ function OrdersPanel({
                   {order.status === "Em preparo" ? <OrderAction label="Saiu para entrega" onClick={() => void onUpdateStatus(order.id, "Saiu para entrega")} primary /> : null}
                   {order.status === "Saiu para entrega" ? <OrderAction label="Finalizar" onClick={() => void onUpdateStatus(order.id, "Finalizado")} primary /> : null}
                   {order.status !== "Finalizado" && order.status !== "Cancelado" ? <OrderAction label="Cancelar" onClick={() => void onUpdateStatus(order.id, "Cancelado")} danger /> : null}
+                  <button type="button" disabled={printingOrderIds.has(order.id)} onClick={() => void onPrint(order, Boolean(order.printed_at))} className="min-h-12 rounded-xl border border-[#4b164c]/25 bg-[#f6edf6] px-4 text-sm font-bold text-[#4b164c] disabled:cursor-wait disabled:opacity-60">
+                    {printingOrderIds.has(order.id) ? "Imprimindo..." : order.printed_at ? "Reimprimir comanda" : "Imprimir comanda"}
+                  </button>
                   <a href={getCustomerWhatsAppUrl(order.customer_phone)} target="_blank" rel="noreferrer" className="inline-flex min-h-12 items-center justify-center rounded-xl bg-[#25d366] px-4 text-sm font-bold text-white">Abrir WhatsApp</a>
                 </div>
+                {order.print_error ? <p className="-mt-1 border-b border-[#d7a948]/25 pb-4 text-xs font-semibold text-[#b42323]">Último erro: {order.print_error}</p> : null}
 
                 <div className="grid gap-4 py-5 lg:grid-cols-3">
                   <OrderInfoBlock
