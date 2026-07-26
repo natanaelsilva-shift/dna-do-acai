@@ -3,14 +3,14 @@
 import Image from "next/image";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import {
-  CATALOG_STORAGE_KEY,
+  getCatalogStorageSnapshot,
   initialCatalog,
+  migrateLegacyCatalogStorage,
+  parseCatalogStorageSnapshot,
   type ComboCup,
-  type CatalogData,
   type ComplementGroup,
   type ComplementOption,
   type Product,
-  withCatalogProductImages,
 } from "@/data/menu";
 import {
   type CreateOrderPayload,
@@ -354,6 +354,10 @@ function buildComboCustomizationLines(
 }
 
 function subscribeCatalogStore(onStoreChange: () => void) {
+  if (migrateLegacyCatalogStorage()) {
+    queueMicrotask(onStoreChange);
+  }
+
   window.addEventListener("storage", onStoreChange);
   window.addEventListener("dna-catalog-updated", onStoreChange);
 
@@ -363,24 +367,8 @@ function subscribeCatalogStore(onStoreChange: () => void) {
   };
 }
 
-function getCatalogSnapshot() {
-  return window.localStorage.getItem(CATALOG_STORAGE_KEY) ?? "";
-}
-
 function getCatalogServerSnapshot() {
   return "";
-}
-
-function parseCatalogSnapshot(snapshot: string) {
-  if (!snapshot) {
-    return initialCatalog;
-  }
-
-  try {
-    return withCatalogProductImages(JSON.parse(snapshot) as CatalogData);
-  } catch {
-    return initialCatalog;
-  }
 }
 
 export function MenuCatalog({
@@ -394,11 +382,11 @@ export function MenuCatalog({
   });
   const catalogSnapshot = useSyncExternalStore(
     subscribeCatalogStore,
-    getCatalogSnapshot,
+    getCatalogStorageSnapshot,
     getCatalogServerSnapshot,
   );
   const catalog = useMemo(
-    () => parseCatalogSnapshot(catalogSnapshot),
+    () => parseCatalogStorageSnapshot(catalogSnapshot),
     [catalogSnapshot],
   );
   const [activeCategory, setActiveCategory] = useState("todos");

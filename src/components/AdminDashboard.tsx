@@ -13,13 +13,16 @@ import {
 import {
   CATALOG_STORAGE_KEY,
   defaultProductImage,
+  getCatalogStorageSnapshot,
   initialCatalog,
+  LEGACY_CATALOG_STORAGE_KEY,
+  migrateLegacyCatalogStorage,
+  parseCatalogStorageSnapshot,
   type CatalogData,
   type Category,
   type ComplementGroup,
   type ComplementOption,
   type Product,
-  withCatalogProductImages,
 } from "@/data/menu";
 import {
   createClient,
@@ -159,6 +162,10 @@ function createId(prefix: string, label: string, existingIds: string[]) {
 }
 
 function subscribeCatalogStore(onStoreChange: () => void) {
+  if (migrateLegacyCatalogStorage()) {
+    queueMicrotask(onStoreChange);
+  }
+
   window.addEventListener("storage", onStoreChange);
   window.addEventListener("dna-catalog-updated", onStoreChange);
 
@@ -168,24 +175,8 @@ function subscribeCatalogStore(onStoreChange: () => void) {
   };
 }
 
-function getCatalogSnapshot() {
-  return window.localStorage.getItem(CATALOG_STORAGE_KEY) ?? "";
-}
-
 function getCatalogServerSnapshot() {
   return "";
-}
-
-function parseCatalogSnapshot(snapshot: string) {
-  if (!snapshot) {
-    return initialCatalog;
-  }
-
-  try {
-    return withCatalogProductImages(JSON.parse(snapshot) as CatalogData);
-  } catch {
-    return initialCatalog;
-  }
 }
 
 export function AdminDashboard({
@@ -201,11 +192,11 @@ export function AdminDashboard({
   });
   const catalogSnapshot = useSyncExternalStore(
     subscribeCatalogStore,
-    getCatalogSnapshot,
+    getCatalogStorageSnapshot,
     getCatalogServerSnapshot,
   );
   const catalog = useMemo(
-    () => parseCatalogSnapshot(catalogSnapshot),
+    () => parseCatalogStorageSnapshot(catalogSnapshot),
     [catalogSnapshot],
   );
   const [activeTab, setActiveTab] = useState<AdminTab>("home");
@@ -936,6 +927,7 @@ export function AdminDashboard({
     }
 
     window.localStorage.removeItem(CATALOG_STORAGE_KEY);
+    window.localStorage.removeItem(LEGACY_CATALOG_STORAGE_KEY);
     window.dispatchEvent(new Event("dna-catalog-updated"));
     setSelectedProductId(initialCatalog.products[0]?.id ?? "");
     setSelectedCategoryId(initialCatalog.categories[0]?.id ?? "");

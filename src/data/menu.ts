@@ -54,14 +54,25 @@ export type CatalogData = {
   complementGroups: ComplementGroup[];
 };
 
-export const CATALOG_STORAGE_KEY = "dna-do-acai-catalog-v3";
+export const CATALOG_STORAGE_KEY = "dna-do-acai-catalog-v4";
+export const LEGACY_CATALOG_STORAGE_KEY = "dna-do-acai-catalog-v3";
+const LEGACY_CATALOG_SNAPSHOT_PREFIX = "legacy-v3:";
+
+const currentProductPrices: Partial<Record<string, number>> = {
+  "dna-explosao-300ml": 1499,
+  "dna-supremo-500ml": 2199,
+  "dna-extra-supremo-700ml": 2899,
+  "copo-acai-puro-300ml": 1299,
+  "copo-acai-puro-500ml": 1899,
+  "copo-acai-puro-700ml": 2499,
+  "combo-supremo-dna": 3999,
+  "combo-dna-gigante": 5299,
+  "combo-explosao-dna": 2799,
+  "combo-triplo-explosao": 3799,
+  "combo-triplo-supremo": 5499,
+};
 
 const requiredPaidExtraOptions: ComplementOption[] = [
-  {
-    id: "nutella-extra",
-    name: "Nutella",
-    price: 350,
-  },
   {
     id: "m-m-extra",
     name: "M&M",
@@ -131,26 +142,59 @@ export const productImageDefaults: Record<string, ProductImageDefaults> = {
 
 const isLocalProductImage = (image: string) => image.startsWith("/images/");
 
+function isRemovedComplementOption(option: ComplementOption) {
+  const normalizedName = option.name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLocaleLowerCase("pt-BR");
+
+  return (
+    option.id.toLocaleLowerCase("pt-BR").includes("nutella") ||
+    normalizedName === "nutella" ||
+    normalizedName.includes("creme de avela")
+  );
+}
+
 function withRequiredPaidExtras(complementGroups: ComplementGroup[]) {
   return complementGroups.map((group) => {
+    const availableOptions = group.options.filter(
+      (option) => !isRemovedComplementOption(option),
+    );
+
     if (group.id !== "turbine-seu-acai") {
-      return group;
+      return availableOptions.length === group.options.length
+        ? group
+        : { ...group, options: availableOptions };
     }
 
-    const existingOptionIds = new Set(group.options.map((option) => option.id));
+    const existingOptionIds = new Set(availableOptions.map((option) => option.id));
     const missingOptions = requiredPaidExtraOptions.filter(
       (option) => !existingOptionIds.has(option.id),
     );
 
-    if (missingOptions.length === 0) {
+    if (
+      missingOptions.length === 0 &&
+      availableOptions.length === group.options.length
+    ) {
       return group;
     }
 
     return {
       ...group,
-      options: [...group.options, ...missingOptions],
+      options: [...availableOptions, ...missingOptions],
     };
   });
+}
+
+function withCurrentProductPrices(catalog: CatalogData): CatalogData {
+  return {
+    ...catalog,
+    products: catalog.products.map((product) => ({
+      ...product,
+      price: currentProductPrices[product.id] ?? product.price,
+    })),
+  };
 }
 
 export function withCatalogProductImages(catalog: CatalogData): CatalogData {
@@ -202,6 +246,65 @@ export function withCatalogProductImages(catalog: CatalogData): CatalogData {
   };
 }
 
+export function getCatalogStorageSnapshot() {
+  const currentSnapshot = window.localStorage.getItem(CATALOG_STORAGE_KEY);
+
+  if (currentSnapshot !== null) {
+    return currentSnapshot;
+  }
+
+  const legacySnapshot = window.localStorage.getItem(LEGACY_CATALOG_STORAGE_KEY);
+
+  return legacySnapshot
+    ? `${LEGACY_CATALOG_SNAPSHOT_PREFIX}${legacySnapshot}`
+    : "";
+}
+
+export function parseCatalogStorageSnapshot(snapshot: string) {
+  if (!snapshot) {
+    return initialCatalog;
+  }
+
+  const isLegacySnapshot = snapshot.startsWith(
+    LEGACY_CATALOG_SNAPSHOT_PREFIX,
+  );
+  const serializedCatalog = isLegacySnapshot
+    ? snapshot.slice(LEGACY_CATALOG_SNAPSHOT_PREFIX.length)
+    : snapshot;
+
+  try {
+    const normalizedCatalog = withCatalogProductImages(
+      JSON.parse(serializedCatalog) as CatalogData,
+    );
+
+    return isLegacySnapshot
+      ? withCurrentProductPrices(normalizedCatalog)
+      : normalizedCatalog;
+  } catch {
+    return initialCatalog;
+  }
+}
+
+export function migrateLegacyCatalogStorage() {
+  if (window.localStorage.getItem(CATALOG_STORAGE_KEY) !== null) {
+    return false;
+  }
+
+  const legacySnapshot = window.localStorage.getItem(LEGACY_CATALOG_STORAGE_KEY);
+
+  if (!legacySnapshot) {
+    return false;
+  }
+
+  const catalog = parseCatalogStorageSnapshot(
+    `${LEGACY_CATALOG_SNAPSHOT_PREFIX}${legacySnapshot}`,
+  );
+
+  window.localStorage.setItem(CATALOG_STORAGE_KEY, JSON.stringify(catalog));
+  window.localStorage.removeItem(LEGACY_CATALOG_STORAGE_KEY);
+  return true;
+}
+
 export const categories: Category[] = [
   {
     id: "monte-seu-acai",
@@ -227,7 +330,7 @@ export const products: Product[] = [
     name: "DNA Explosão (300ml)",
     description:
       "Monte seu açaí de 300ml do seu jeito, com diversos complementos.",
-    price: 1299,
+    price: 1499,
     image: productImages.dnaExplosao,
     imagePosition: "50% 46%",
     customizable: true,
@@ -239,7 +342,7 @@ export const products: Product[] = [
     name: "DNA Supremo (500ml)",
     description:
       "Monte seu açaí de 500ml do seu jeito, com diversos complementos.",
-    price: 1899,
+    price: 2199,
     image: productImages.dnaSupremo,
     imagePosition: "50% 46%",
     customizable: true,
@@ -251,7 +354,7 @@ export const products: Product[] = [
     name: "Dna Extra Supremo (700ml)",
     description:
       "Açaí de 700ml super cremoso, montado do seu jeito com até 5 complementos. O tamanho perfeito pra quem ama um copão bem servido e cheio de sabor!",
-    price: 2699,
+    price: 2899,
     image: productImages.dnaExtraSupremo,
     imagePosition: "50% 46%",
     customizable: true,
@@ -263,7 +366,7 @@ export const products: Product[] = [
     name: "Copo de Açaí Puro (300ml)",
     description:
       "Açaí 100% puro, cremoso e geladinho. Sabor original de verdade.",
-    price: 999,
+    price: 1299,
     image: productImages.acaiPuro300,
     imagePosition: "50% 45%",
   },
@@ -273,7 +376,7 @@ export const products: Product[] = [
     name: "Copo de Açaí Puro (500ml)",
     description:
       "Açaí puro em tamanho maior, bem servido e super cremoso.",
-    price: 1499,
+    price: 1899,
     image: productImages.acaiPuro500,
     imagePosition: "50% 46%",
   },
@@ -283,7 +386,7 @@ export const products: Product[] = [
     name: "Copo de Açaí Puro (700ml)",
     description:
       "Açaí puro em tamanho gigante, super cremoso e bem servido. Simples, natural e perfeito pra quem ama o verdadeiro sabor do açaí!",
-    price: 1899,
+    price: 2499,
     image: productImages.acaiPuro700,
     imagePosition: "50% 46%",
   },
@@ -292,7 +395,7 @@ export const products: Product[] = [
     categoryId: "combos",
     name: "Combo Supremo DNA",
     description: "2 copões de 500ml com até 4 complementos cada.",
-    price: 3599,
+    price: 3999,
     image: "",
     imagePosition: "50% 50%",
     customizable: true,
@@ -317,7 +420,7 @@ export const products: Product[] = [
     name: "Combo Dna Gigante",
     description:
       "2 copões de 700ml com até 5 complementos cada. Muito mais recheio, muito mais sabor e perfeito pra compartilhar!",
-    price: 4999,
+    price: 5299,
     image: "",
     imagePosition: "50% 50%",
     customizable: true,
@@ -341,7 +444,7 @@ export const products: Product[] = [
     categoryId: "combos",
     name: "Combo Explosão DNA",
     description: "2 açaís de 300ml com até 3 complementos cada.",
-    price: 2499,
+    price: 2799,
     image: "",
     imagePosition: "50% 50%",
     customizable: true,
@@ -365,7 +468,7 @@ export const products: Product[] = [
     categoryId: "combos",
     name: "Combo Triplo Explosão",
     description: "2 açaís completos de 300ml + 1 açaí puro 300ml.",
-    price: 2999,
+    price: 3799,
     image: "",
     imagePosition: "50% 50%",
     customizable: true,
@@ -395,7 +498,7 @@ export const products: Product[] = [
     categoryId: "combos",
     name: "Combo Triplo Supremo",
     description: "2 açaís completos de 500ml + 1 açaí puro 500ml.",
-    price: 4299,
+    price: 5499,
     image: "",
     imagePosition: "50% 50%",
     customizable: true,
@@ -499,11 +602,6 @@ export const cupComplementGroups: ComplementGroup[] = [
         id: "pacoca-extra",
         name: "Paçoca extra",
         price: 200,
-      },
-      {
-        id: "nutella-extra",
-        name: "Nutella",
-        price: 350,
       },
       {
         id: "m-m-extra",
