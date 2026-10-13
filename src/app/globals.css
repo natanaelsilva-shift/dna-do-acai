@@ -354,3 +354,43 @@ select {
     scroll-behavior: auto !important;
   }
 }
+
+/* ---------- AcaiExperience ---------- */
+
+/* Estado inicial da intro. A classe é aplicada por script inline antes do
+   primeiro paint (só sem reduced motion) e removida pelo GSAP. Se o JS não
+   rodar, a animação de segurança revela tudo depois de 2.8s. */
+html.dna-intro-pending .ax-intro {
+  opacity: 0;
+  animation: dna-intro-failsafe 0.6s ease 2.8s forwards;
+}
+
+html.dna-intro-pending .ax-line-inner {
+  color: rgb(246 240 230 / 0.1);
+  animation: dna-intro-failsafe-color 0.8s ease 2.8s forwards;
+}
+
+@keyframes dna-intro-failsafe {
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dna-intro-failsafe-color {
+  to {
+    color: rgb(246 240 230 / 1);
+  }
+}
+
+/* O vídeo/pôster tem fundo próprio: a máscara dissolve as bordas na cena e
+   esconde a marca d'água do canto inferior. */
+.ax-cup-mask {
+  -webkit-mask-image: radial-gradient(ellipse 50% 47% at 50% 47%, #000 66%, transparent 100%);
+  mask-image: radial-gradient(ellipse 50% 47% at 50% 47%, #000 66%, transparent 100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ax-stage-frame {
+    height: 100svh;
+  }
+}

@@ -1,12 +1,14 @@
 import Image from "next/image";
-import { ClientPwaInstall } from "@/components/ClientPwaInstall";
-import { HeroMedia } from "@/components/HeroMedia";
+import { AcaiExperience } from "@/components/acai-experience/AcaiExperience";
 import { MenuCatalog } from "@/components/MenuCatalog";
+import { SiteHeader } from "@/components/navigation/SiteHeader";
 import { StoreProvider } from "@/components/store/StoreProvider";
-import { categories, productImages } from "@/data/menu";
+import { productImages } from "@/data/menu";
 import { getStoreStatus } from "@/lib/store-status/server";
 
 export const dynamic = "force-dynamic";
+
+const introPendingScript = "try{if(!matchMedia('(prefers-reduced-motion: reduce)').matches){document.documentElement.classList.add('dna-intro-pending')}}catch(e){}";
 
 const aboutFeatures = [
   {
@@ -140,96 +142,14 @@ export default async function Home() {
 
   return (
     <StoreProvider initialStoreStatus={initialStoreStatus}>
-    <main className="min-h-screen overflow-x-clip bg-[#fffaf0] text-[#16221a]">
-      <header className="relative z-20 border-b border-[#d7a948]/20 bg-[#071a14] text-white">
-        <div className="mx-auto max-w-7xl px-4 py-3 md:px-8 md:py-4">
-          <div className="flex items-center justify-between gap-4">
-            <a href="#" className="group flex items-center gap-3" aria-label="DNA do Açaí">
-              <Image
-                src={brandLogo.src}
-                alt={brandLogo.alt}
-                width={72}
-                height={72}
-                priority
-                className="size-14 shrink-0 object-contain drop-shadow-[0_10px_20px_rgba(0,0,0,0.32)] transition duration-300 group-hover:scale-[1.03] md:size-16"
-              />
-            </a>
+    <main className="dna-store min-h-screen overflow-x-clip">
+      <script
+        // Esconde a cena da intro antes do primeiro paint (só com movimento).
+        dangerouslySetInnerHTML={{ __html: introPendingScript }}
+      />
+      <SiteHeader />
+      <AcaiExperience />
 
-            <nav className="hidden items-center gap-8 text-sm font-medium text-white/80 md:flex">
-              <a className="transition hover:text-[#f8e8b5]" href="#cardapio">
-                Cardápio
-              </a>
-              <a className="transition hover:text-[#f8e8b5]" href="#sobre">
-                Sobre
-              </a>
-              <a className="transition hover:text-[#f8e8b5]" href="#pedido">
-                Pedido
-              </a>
-            </nav>
-
-            <a
-              href="#cardapio"
-              className="hidden min-h-11 items-center border border-[#d7a948] bg-[#d7a948] px-4 py-2 text-sm font-semibold text-[#103d2c] transition hover:bg-[#f1cf77] md:inline-flex"
-            >
-              Pedir agora
-            </a>
-
-            <ClientPwaInstall className="hidden md:grid md:justify-items-end" />
-
-            <details className="group relative md:hidden">
-              <summary
-                className="grid size-11 cursor-pointer list-none place-items-center border border-[#d7a948]/70 bg-[#103d2c]/78 text-[#f8e8b5] backdrop-blur transition group-open:bg-[#d7a948] group-open:text-[#103d2c] [&::-webkit-details-marker]:hidden"
-                aria-label="Abrir menu"
-              >
-                <span className="grid gap-1.5" aria-hidden="true">
-                  <span className="block h-0.5 w-5 bg-current transition group-open:translate-y-2 group-open:rotate-45" />
-                  <span className="block h-0.5 w-5 bg-current transition group-open:opacity-0" />
-                  <span className="block h-0.5 w-5 bg-current transition group-open:-translate-y-2 group-open:-rotate-45" />
-                </span>
-              </summary>
-              <nav className="absolute right-0 mt-3 grid w-[min(17rem,calc(100vw-2rem))] gap-1 border border-[#d7a948]/45 bg-[#fffaf0] p-2 text-sm font-semibold text-[#103d2c] shadow-[0_18px_48px_rgba(16,61,44,0.24)]">
-                <a className="min-h-11 px-3 py-3 transition hover:bg-[#f3ead2]" href="#cardapio">
-                  Cardápio
-                </a>
-                <a className="min-h-11 px-3 py-3 transition hover:bg-[#f3ead2]" href="#sobre">
-                  Sobre
-                </a>
-                <a className="min-h-11 px-3 py-3 transition hover:bg-[#f3ead2]" href="#pedido">
-                  Pedido
-                </a>
-              </nav>
-            </details>
-          </div>
-
-          <ClientPwaInstall
-            className="mt-3 grid md:hidden"
-            noteClassName="text-[#f8e8b5]/80"
-          />
-        </div>
-      </header>
-
-      <section className="relative overflow-hidden bg-[#061a14] text-white">
-        <div className="absolute inset-0 bg-[linear-gradient(132deg,#061a14_0%,#103d2c_38%,#4b164c_72%,#07150f_100%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_48%,rgba(215,169,72,0.08),transparent_28%),linear-gradient(180deg,rgba(0,0,0,0.02)_0%,rgba(0,0,0,0.28)_100%)]" />
-
-        <div className="relative z-10 flex min-h-[calc(100svh-97px)] items-center justify-center px-4 py-6 md:px-8 md:py-8 max-md:min-h-0">
-          <HeroMedia />
-        </div>
-      </section>
-
-      <section className="border-y border-[#d7a948]/35 bg-[#4b164c]">
-        <div className="mx-auto grid max-w-7xl grid-cols-1 gap-px px-4 py-4 text-[#f8e8b5] min-[360px]:grid-cols-2 md:grid-cols-3 md:px-8">
-          {categories.map((category) => (
-            <a
-              key={category.id}
-              href="#cardapio"
-              className="min-h-14 border border-[#d7a948]/30 px-3 py-4 text-center text-xs font-semibold uppercase tracking-[0.08em] transition hover:bg-[#d7a948] hover:text-[#103d2c] sm:text-sm sm:tracking-[0.12em]"
-            >
-              {category.name}
-            </a>
-          ))}
-        </div>
-      </section>
 
       <MenuCatalog />
 

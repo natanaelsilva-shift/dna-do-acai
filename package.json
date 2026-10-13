@@ -12,6 +12,7 @@
   "dependencies": {
     "@supabase/ssr": "latest",
     "@supabase/supabase-js": "latest",
+    "gsap": "^3.15.0",
     "next": "latest",
     "qz-tray": "^2.2.6",
     "react": "latest",
