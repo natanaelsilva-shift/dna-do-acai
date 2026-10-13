@@ -5,10 +5,23 @@ type RouteContext = {
   params: Promise<{ id: string }>;
 };
 
-type PrintAction = "claim" | "complete" | "fail" | "reprint";
+type PrintAction =
+  | "claim"
+  | "complete"
+  | "fail"
+  | "reprint"
+  | "enqueue-reprint"
+  | "enqueue-retry";
 
 function isPrintAction(value: unknown): value is PrintAction {
-  return value === "claim" || value === "complete" || value === "fail" || value === "reprint";
+  return (
+    value === "claim" ||
+    value === "complete" ||
+    value === "fail" ||
+    value === "reprint" ||
+    value === "enqueue-reprint" ||
+    value === "enqueue-retry"
+  );
 }
 
 export async function POST(request: Request, context: RouteContext) {
@@ -21,6 +34,38 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     const supabase = await createClient();
+
+    if (
+      body.action === "enqueue-reprint" ||
+      body.action === "enqueue-retry"
+    ) {
+      const { data: authData, error: authError } =
+        await supabase.auth.getUser();
+
+      if (authError || !authData.user) {
+        return NextResponse.json(
+          { error: "Sessão administrativa não encontrada." },
+          { status: 401 },
+        );
+      }
+
+      const requestedBy =
+        authData.user.email ?? authData.user.id ?? "administrador";
+      const { data, error } = await supabase.rpc("request_order_reprint", {
+        p_order_id: id,
+        p_requested_by: requestedBy,
+      });
+
+      if (error) throw new Error(error.message);
+
+      return NextResponse.json({
+        jobId: data,
+        message:
+          body.action === "enqueue-retry"
+            ? "Nova tentativa enviada para a fila do PrintNode."
+            : "Reimpressão enviada para a fila do PrintNode.",
+      });
+    }
 
     if (body.action === "claim") {
       const { data, error } = await supabase.rpc("claim_order_print", {

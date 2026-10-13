@@ -35,6 +35,11 @@ import {
   type OrderStatus,
 } from "@/data/orders";
 import {
+  type PrintJobResponse,
+  type ServerPrintSettings,
+  type ServerPrintSettingsResponse,
+} from "@/data/printing";
+import {
   getStoreStatusLabel,
   type StoreStatus,
   type StoreStatusPayload,
@@ -232,6 +237,12 @@ export function AdminDashboard({
   const [availablePrinters, setAvailablePrinters] = useState<string[]>([]);
   const [printerMessage, setPrinterMessage] = useState("QZ Tray desconectado.");
   const [printingOrderIds, setPrintingOrderIds] = useState<Set<string>>(new Set());
+  const [serverPrintSettings, setServerPrintSettings] =
+    useState<ServerPrintSettings | null>(null);
+  const [serverPrintLoading, setServerPrintLoading] = useState(false);
+  const [serverPrintMessage, setServerPrintMessage] = useState(
+    "Carregando configuração do PrintNode...",
+  );
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const latestOrdersRef = useRef<OrderRecord[]>(initialOrders);
   const knownOrderIds = useRef<Set<string>>(
@@ -435,6 +446,159 @@ export function AdminDashboard({
     }
   }, [connectPrinter]);
 
+  const loadServerPrintSettings = useCallback(async () => {
+    setServerPrintLoading(true);
+    try {
+      const response = await fetch("/api/printing/settings", {
+        cache: "no-store",
+      });
+      const body = (await response.json()) as ServerPrintSettingsResponse;
+
+      if (!response.ok || !body.settings) {
+        throw new Error(
+          body.error ?? "Não foi possível carregar a configuração do PrintNode.",
+        );
+      }
+
+      setServerPrintSettings(body.settings);
+      setServerPrintMessage(
+        body.settings.automaticEnabled
+          ? "Impressão automática pelo PrintNode ativada."
+          : "Impressão automática pelo PrintNode desativada.",
+      );
+    } catch (error) {
+      setServerPrintMessage(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível carregar a configuração do PrintNode.",
+      );
+    } finally {
+      setServerPrintLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadServerPrintSettings();
+  }, [loadServerPrintSettings]);
+
+  const toggleServerAutomaticPrinting = useCallback(async () => {
+    if (!serverPrintSettings || serverPrintLoading) return;
+
+    const nextEnabled = !serverPrintSettings.automaticEnabled;
+    setServerPrintLoading(true);
+    setServerPrintMessage("Salvando configuração no banco...");
+
+    try {
+      const response = await fetch("/api/printing/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ automaticEnabled: nextEnabled }),
+      });
+      const body = (await response.json()) as ServerPrintSettingsResponse;
+
+      if (!response.ok || !body.settings) {
+        throw new Error(
+          body.error ?? "Não foi possível alterar a impressão automática.",
+        );
+      }
+
+      setServerPrintSettings(body.settings);
+      setServerPrintMessage(
+        body.settings.automaticEnabled
+          ? "Impressão automática ativada e salva no banco."
+          : "Impressão automática desativada e salva no banco.",
+      );
+    } catch (error) {
+      setServerPrintMessage(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível alterar a impressão automática.",
+      );
+    } finally {
+      setServerPrintLoading(false);
+    }
+  }, [serverPrintLoading, serverPrintSettings]);
+
+  const requestServerTestPrint = useCallback(async () => {
+    setServerPrintLoading(true);
+    setServerPrintMessage("Enviando comanda de teste para o PrintNode...");
+
+    try {
+      const response = await fetch("/api/printing/test", { method: "POST" });
+      const body = (await response.json()) as PrintJobResponse;
+      if (!response.ok) {
+        throw new Error(
+          body.error ?? "Não foi possível criar a impressão de teste.",
+        );
+      }
+      setServerPrintMessage(
+        body.message ?? "Comanda de teste enviada para a fila do PrintNode.",
+      );
+    } catch (error) {
+      setServerPrintMessage(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível criar a impressão de teste.",
+      );
+    } finally {
+      setServerPrintLoading(false);
+    }
+  }, []);
+
+  const requestServerOrderPrint = useCallback(async (order: OrderRecord) => {
+    const retry = order.print_status === "failed";
+    const action = retry ? "enqueue-retry" : "enqueue-reprint";
+    const confirmation = retry
+      ? `Tentar imprimir novamente o pedido ${formatOrderNumber(order.order_number)}?`
+      : `Reimprimir a comanda do pedido ${formatOrderNumber(order.order_number)}?`;
+
+    if (!window.confirm(confirmation)) return;
+
+    setPrintingOrderIds((current) => new Set(current).add(order.id));
+    try {
+      const response = await fetch(`/api/orders/${order.id}/print`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const body = (await response.json()) as PrintJobResponse;
+
+      if (!response.ok) {
+        throw new Error(
+          body.error ?? "Não foi possível enviar a comanda para impressão.",
+        );
+      }
+
+      setOrders((current) =>
+        current.map((currentOrder) =>
+          currentOrder.id === order.id
+            ? {
+                ...currentOrder,
+                print_status: "pending",
+                print_error: null,
+                print_updated_at: new Date().toISOString(),
+              }
+            : currentOrder,
+        ),
+      );
+      setServerPrintMessage(
+        body.message ?? "Comanda enviada para a fila do PrintNode.",
+      );
+    } catch (error) {
+      setServerPrintMessage(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível enviar a comanda para impressão.",
+      );
+    } finally {
+      setPrintingOrderIds((current) => {
+        const next = new Set(current);
+        next.delete(order.id);
+        return next;
+      });
+    }
+  }, []);
+
   useEffect(() => {
     if (
       printerPreferencesLoaded &&
@@ -611,9 +775,8 @@ export function AdminDashboard({
       }
       console.log("Novo pedido detectado");
       void playNewOrderSound();
-      void queueOrderPrint(order, { trigger: "receive" });
     },
-    [playNewOrderSound, queueOrderPrint],
+    [playNewOrderSound],
   );
 
   const dashboardMetrics = useMemo(() => {
@@ -859,7 +1022,6 @@ export function AdminDashboard({
 
   const updateOrderStatus = useCallback(
     async (orderId: string, nextStatus: OrderStatus) => {
-      const previousOrder = latestOrdersRef.current.find((order) => order.id === orderId);
       try {
         const response = await fetch(`/api/orders/${orderId}`, {
           method: "PATCH",
@@ -892,9 +1054,6 @@ export function AdminDashboard({
           );
         }
         setStatus(`Pedido #${body.order.order_number} atualizado para ${nextStatus}.`);
-        if (previousOrder?.status === "Novo" && nextStatus === "Em preparo") {
-          void queueOrderPrint(body.order, { trigger: "accept" });
-        }
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Não foi possível atualizar o pedido.";
@@ -903,7 +1062,7 @@ export function AdminDashboard({
         setStatus(message);
       }
     },
-    [queueOrderPrint],
+    [],
   );
 
   function updateCatalog(updater: (currentCatalog: CatalogData) => CatalogData) {
@@ -1246,11 +1405,12 @@ export function AdminDashboard({
               loading={ordersLoading}
               orders={orders}
               onRefresh={() => loadOrders({ detectNew: false })}
-              onPrint={(order, reprint) =>
+              onPrintNode={(order) => requestServerOrderPrint(order)}
+              onLocalPrint={(order, reprint) =>
                 queueOrderPrint(order, { trigger: "manual", reprint })
               }
               printingOrderIds={printingOrderIds}
-              printerMessage={printerMessage}
+              printerMessage={serverPrintMessage}
               onUpdateStatus={updateOrderStatus}
               onUpdateDeliveryFee={updateOrderDeliveryFee}
               onEnableSound={() => void enableOrderSound()}
@@ -1287,17 +1447,27 @@ export function AdminDashboard({
               onTestSound={() => void testOrderSound()}
               onToggleStore={() => void toggleStoreStatus()}
               printerSettings={
-                <PrinterSettingsPanel
-                  availablePrinters={availablePrinters}
-                  connection={printerConnection}
-                  message={printerMessage}
-                  preferences={printerPreferences}
-                  onChange={(patch) =>
-                    setPrinterPreferences((current) => ({ ...current, ...patch }))
-                  }
-                  onConnect={() => void connectPrinter().catch(() => undefined)}
-                  onTest={() => void testPrinter()}
-                />
+                <div className="space-y-4">
+                  <ServerPrinterSettingsPanel
+                    loading={serverPrintLoading}
+                    message={serverPrintMessage}
+                    settings={serverPrintSettings}
+                    onRefresh={() => void loadServerPrintSettings()}
+                    onTest={() => void requestServerTestPrint()}
+                    onToggle={() => void toggleServerAutomaticPrinting()}
+                  />
+                  <PrinterSettingsPanel
+                    availablePrinters={availablePrinters}
+                    connection={printerConnection}
+                    message={printerMessage}
+                    preferences={printerPreferences}
+                    onChange={(patch) =>
+                      setPrinterPreferences((current) => ({ ...current, ...patch }))
+                    }
+                    onConnect={() => void connectPrinter().catch(() => undefined)}
+                    onTest={() => void testPrinter()}
+                  />
+                </div>
               }
             />
           ) : null}
@@ -1515,6 +1685,101 @@ function DashboardOverview({
   );
 }
 
+function ServerPrinterSettingsPanel({
+  loading,
+  message,
+  settings,
+  onRefresh,
+  onTest,
+  onToggle,
+}: {
+  loading: boolean;
+  message: string;
+  settings: ServerPrintSettings | null;
+  onRefresh: () => void;
+  onTest: () => void;
+  onToggle: () => void;
+}) {
+  const enabled = settings?.automaticEnabled === true;
+
+  return (
+    <section className="rounded-2xl border border-[#d7a948]/35 bg-white p-4 shadow-sm md:p-6">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-[#4b164c]">
+            Impressão principal
+          </p>
+          <h2 className="mt-1 text-xl font-bold text-[#103d2c]">
+            Comandas automáticas com PrintNode
+          </h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-[#68756c]">
+            Um pedido novo entra na fila pelo Supabase e imprime no computador da
+            loja sem depender deste painel estar aberto.
+          </p>
+        </div>
+        <span
+          className={`inline-flex min-h-10 items-center gap-2 self-start rounded-full px-3 text-xs font-bold ${
+            enabled
+              ? "bg-[#eaf8ef] text-[#14743f]"
+              : "bg-[#fff0f0] text-[#b42323]"
+          }`}
+        >
+          <span
+            className={`size-2 rounded-full ${
+              enabled ? "bg-[#178a4b]" : "bg-[#c93636]"
+            }`}
+          />
+          {enabled ? "Automática ativada" : "Automática desativada"}
+        </span>
+      </div>
+
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="rounded-xl bg-[#fafbf9] p-3">
+          <p className="text-xs font-bold uppercase tracking-wider text-[#4b164c]">Loja</p>
+          <p className="mt-1 text-sm font-bold text-[#103d2c]">{settings?.storeName ?? "Não carregado"}</p>
+        </div>
+        <div className="rounded-xl bg-[#fafbf9] p-3">
+          <p className="text-xs font-bold uppercase tracking-wider text-[#4b164c]">Papel</p>
+          <p className="mt-1 text-sm font-bold text-[#103d2c]">{settings ? `${settings.paperWidth} mm` : "—"}</p>
+        </div>
+        <div className="rounded-xl bg-[#fafbf9] p-3">
+          <p className="text-xs font-bold uppercase tracking-wider text-[#4b164c]">Caracteres</p>
+          <p className="mt-1 text-sm font-bold text-[#103d2c]">{settings?.charactersPerLine ?? "—"} por linha</p>
+        </div>
+        <div className="rounded-xl bg-[#fafbf9] p-3">
+          <p className="text-xs font-bold uppercase tracking-wider text-[#4b164c]">Tentativas</p>
+          <p className="mt-1 text-sm font-bold text-[#103d2c]">{settings?.maxAttempts ?? "—"}</p>
+        </div>
+        <button
+          type="button"
+          onClick={onToggle}
+          disabled={!settings || loading}
+          className={`min-h-12 rounded-xl px-4 text-sm font-bold disabled:cursor-wait disabled:opacity-50 ${
+            enabled
+              ? "border border-[#b42323]/25 bg-[#fff0f0] text-[#b42323]"
+              : "bg-[#103d2c] text-white"
+          }`}
+        >
+          {enabled ? "Desativar automática" : "Ativar automática"}
+        </button>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button type="button" onClick={onTest} disabled={loading} className="min-h-11 rounded-xl bg-[#d7a948] px-4 text-sm font-bold text-[#103d2c] disabled:cursor-wait disabled:opacity-50">
+          Imprimir comanda de teste
+        </button>
+        <button type="button" onClick={onRefresh} disabled={loading} className="min-h-11 rounded-xl border border-[#103d2c]/20 px-4 text-sm font-bold text-[#103d2c] disabled:cursor-wait disabled:opacity-50">
+          Atualizar configuração
+        </button>
+      </div>
+
+      <p aria-live="polite" className="mt-4 rounded-xl bg-[#edf3ef] p-3 text-sm font-semibold text-[#425448]">
+        {loading ? "Aguarde..." : message}
+      </p>
+    </section>
+  );
+}
+
 function PrinterSettingsPanel({
   availablePrinters,
   connection,
@@ -1539,9 +1804,9 @@ function PrinterSettingsPanel({
     <section className="rounded-2xl border border-[#4b164c]/15 bg-white p-4 shadow-sm md:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-xs font-black uppercase tracking-[0.14em] text-[#4b164c]">Impressora de pedidos</p>
-          <h2 className="mt-1 text-xl font-bold text-[#103d2c]">Comandas térmicas com QZ Tray</h2>
-          <p className="mt-2 text-sm text-[#68756c]">Configure no computador da loja. Celulares mantêm apenas a impressão manual.</p>
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-[#4b164c]">Contingência local</p>
+          <h2 className="mt-1 text-xl font-bold text-[#103d2c]">Impressão manual com QZ Tray</h2>
+          <p className="mt-2 text-sm text-[#68756c]">Use somente para teste ou contingência no computador da loja. A impressão automática principal usa o PrintNode.</p>
         </div>
         <div className={`inline-flex min-h-10 items-center gap-2 self-start rounded-full px-3 text-xs font-bold ${connected ? "bg-[#eaf8ef] text-[#14743f]" : connection === "error" ? "bg-[#fff0f0] text-[#b42323]" : "bg-[#edf0ee] text-[#526354]"}`}>
           <span className={`size-2 rounded-full ${connected ? "bg-[#178a4b]" : connection === "connecting" ? "bg-[#d7a948]" : "bg-[#c93636]"}`} />
@@ -1566,11 +1831,8 @@ function PrinterSettingsPanel({
         <label className="grid gap-1.5 text-xs font-bold uppercase tracking-wider text-[#4b164c]">Formato<select value={preferences.mode} onChange={(event) => onChange({ mode: event.target.value as PrinterPreferences["mode"] })} className={fieldClass}><option value="escpos">ESC/POS (recomendado)</option><option value="html">HTML compatível</option></select></label>
       </div>
 
-      <div className="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-        <PrinterToggle label="Impressão automática" checked={preferences.automaticPrinting} onChange={(checked) => onChange({ automaticPrinting: checked })} />
-        <PrinterToggle label="Tocar som antes" checked={preferences.playSoundBeforePrint} onChange={(checked) => onChange({ playSoundBeforePrint: checked })} />
-        <PrinterToggle label="Imprimir ao receber" checked={preferences.printOnReceive} onChange={(checked) => onChange({ printOnReceive: checked })} />
-        <PrinterToggle label="Imprimir ao aceitar" checked={preferences.printOnAccept} onChange={(checked) => onChange({ printOnAccept: checked })} />
+      <div className="mt-5 grid gap-2 sm:grid-cols-2">
+        <PrinterToggle label="Tocar som antes do teste local" checked={preferences.playSoundBeforePrint} onChange={(checked) => onChange({ playSoundBeforePrint: checked })} />
       </div>
 
       <p aria-live="polite" className={`mt-4 rounded-xl p-3 text-sm font-semibold ${connection === "error" || message.toLocaleLowerCase("pt-BR").includes("falha") ? "bg-[#fff0f0] text-[#b42323]" : "bg-[#edf3ef] text-[#425448]"}`}>{message}</p>
@@ -1661,7 +1923,8 @@ function OrdersPanel({
   highlightedOrderId,
   loading,
   orders,
-  onPrint,
+  onLocalPrint,
+  onPrintNode,
   onRefresh,
   onUpdateStatus,
   onUpdateDeliveryFee,
@@ -1676,7 +1939,8 @@ function OrdersPanel({
   highlightedOrderId: string | null;
   loading: boolean;
   orders: OrderRecord[];
-  onPrint: (order: OrderRecord, reprint: boolean) => void | Promise<void>;
+  onLocalPrint: (order: OrderRecord, reprint: boolean) => void | Promise<void>;
+  onPrintNode: (order: OrderRecord) => void | Promise<void>;
   onRefresh: () => void | Promise<void>;
   onUpdateStatus: (orderId: string, status: OrderStatus) => void | Promise<void>;
   onUpdateDeliveryFee: (orderId: string, deliveryFee: number) => void | Promise<void>;
@@ -1768,7 +2032,9 @@ function OrdersPanel({
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#4b164c]">Pedido {formatOrderNumber(order.order_number)}</p>
                       {order.status === "Novo" ? <span className="rounded-full bg-[#d7a948] px-2 py-1 text-[10px] font-black text-[#103d2c]">NOVO</span> : null}
-                      {order.printed_at ? <span className="rounded-full bg-[#eaf8ef] px-2 py-1 text-[10px] font-bold text-[#14743f]">IMPRESSO</span> : null}
+                      {order.print_status === "pending" ? <span className="rounded-full bg-[#fff8df] px-2 py-1 text-[10px] font-bold text-[#8a6a26]">IMPRESSÃO PENDENTE</span> : null}
+                      {order.print_status === "printing" ? <span className="rounded-full bg-[#eef5ff] px-2 py-1 text-[10px] font-bold text-[#195a9a]">IMPRIMINDO</span> : null}
+                      {order.print_status === "printed" || (order.printed_at && order.print_status !== "failed") ? <span className="rounded-full bg-[#eaf8ef] px-2 py-1 text-[10px] font-bold text-[#14743f]">IMPRESSO</span> : null}
                       {order.print_status === "failed" ? <span className="rounded-full bg-[#fff0f0] px-2 py-1 text-[10px] font-bold text-[#b42323]">FALHA NA IMPRESSÃO</span> : null}
                       <span className="rounded-full bg-[#edf3ef] px-2 py-1 text-[10px] font-bold text-[#526354]">Esperando {formatWaitTime(order.created_at)}</span>
                     </div>
@@ -1812,8 +2078,47 @@ function OrdersPanel({
                   {order.status === "Em preparo" ? <OrderAction label="Saiu para entrega" onClick={() => void onUpdateStatus(order.id, "Saiu para entrega")} primary /> : null}
                   {order.status === "Saiu para entrega" ? <OrderAction label="Finalizar" onClick={() => void onUpdateStatus(order.id, "Finalizado")} primary /> : null}
                   {order.status !== "Finalizado" && order.status !== "Cancelado" ? <OrderAction label="Cancelar" onClick={() => void onUpdateStatus(order.id, "Cancelado")} danger /> : null}
-                  <button type="button" disabled={printingOrderIds.has(order.id)} onClick={() => void onPrint(order, Boolean(order.printed_at))} className="min-h-12 rounded-xl border border-[#4b164c]/25 bg-[#f6edf6] px-4 text-sm font-bold text-[#4b164c] disabled:cursor-wait disabled:opacity-60">
-                    {printingOrderIds.has(order.id) ? "Imprimindo..." : order.printed_at ? "Reimprimir comanda" : "Imprimir comanda"}
+                  <button
+                    type="button"
+                    disabled={
+                      printingOrderIds.has(order.id) ||
+                      order.print_status === "pending" ||
+                      order.print_status === "printing"
+                    }
+                    onClick={() => void onPrintNode(order)}
+                    className="min-h-12 rounded-xl border border-[#4b164c]/25 bg-[#f6edf6] px-4 text-sm font-bold text-[#4b164c] disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {printingOrderIds.has(order.id)
+                      ? "Enviando..."
+                      : order.print_status === "pending"
+                        ? "Impressão pendente"
+                        : order.print_status === "printing"
+                          ? "Imprimindo..."
+                          : order.print_status === "failed"
+                            ? "Tentar novamente"
+                            : order.printed_at
+                              ? "Reimprimir comanda"
+                              : "Imprimir comanda"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={
+                      printingOrderIds.has(order.id) ||
+                      order.print_status === "pending" ||
+                      order.print_status === "printing"
+                    }
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          `Imprimir localmente pelo QZ Tray o pedido ${formatOrderNumber(order.order_number)}?`,
+                        )
+                      ) {
+                        void onLocalPrint(order, Boolean(order.printed_at));
+                      }
+                    }}
+                    className="min-h-12 rounded-xl border border-[#103d2c]/20 bg-white px-4 text-sm font-bold text-[#103d2c] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Imprimir local (QZ)
                   </button>
                   <a href={getCustomerWhatsAppUrl(order.customer_phone)} target="_blank" rel="noreferrer" className="inline-flex min-h-12 items-center justify-center rounded-xl bg-[#25d366] px-4 text-sm font-bold text-white">Abrir WhatsApp</a>
                 </div>

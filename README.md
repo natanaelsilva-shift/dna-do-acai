@@ -34,3 +34,8 @@ supabase/orders.sql
 ```bash
 npm run dev
 ```
+
+## Impressão automática
+
+A configuração da impressão térmica silenciosa com Supabase e PrintNode está em
+[`docs/PRINTNODE.md`](docs/PRINTNODE.md).
