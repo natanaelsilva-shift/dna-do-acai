@@ -41,7 +41,7 @@ export function HeroMedia() {
               }}
             >
               <source src="/videos/acai-hero.webm" type="video/webm" />
-              <source src="/videos/acai-hero.mp4" type="video/mp4" />
+              <source src="/videos/Acai ringue.mp4" type="video/mp4" />
             </video>
           ) : null}
         </div>
