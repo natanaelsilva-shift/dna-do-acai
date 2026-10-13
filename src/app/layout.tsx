@@ -1,5 +1,16 @@
 import type { Metadata, Viewport } from "next";
+import { Bricolage_Grotesque } from "next/font/google";
 import "./globals.css";
+
+// Uma família variável com dois papéis: tamanho ótico de display (títulos,
+// pesados e condensados) e de texto (corpo). Aplicada só na loja via
+// `.dna-store`; o painel admin mantém a fonte do sistema.
+const bricolage = Bricolage_Grotesque({
+  subsets: ["latin"],
+  axes: ["opsz", "wdth"],
+  display: "swap",
+  variable: "--font-bricolage",
+});
 
 const siteUrl =
   process.env.NEXT_PUBLIC_SITE_URL ??
@@ -75,7 +86,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="pt-BR">
+    <html lang="pt-BR" className={bricolage.variable}>
       <body>{children}</body>
     </html>
   );

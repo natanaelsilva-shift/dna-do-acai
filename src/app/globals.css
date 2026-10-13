@@ -86,3 +86,271 @@ select {
     transform: translateY(0);
   }
 }
+
+/* ==========================================================================
+   DNA do Açaí — design system da loja
+   Tudo abaixo vale apenas dentro de `.dna-store` (site do cliente). O painel
+   admin continua com o visual próprio, rápido e sem efeitos.
+   ========================================================================== */
+
+@theme {
+  /* Cor: o escuro é a própria cor do açaí; o verde é folha, não neon. */
+  --color-dna-night: #1a0a1f;
+  --color-dna-plum: #2a1230;
+  --color-dna-acai: #4b164c;
+  --color-dna-berry: #6d2a7a;
+  --color-dna-orchid: #b98ac4;
+  --color-dna-leaf: #2f7d4f;
+  --color-dna-sprout: #7fc79b;
+  --color-dna-forest: #103d2c;
+  --color-dna-cream: #f6f0e6;
+  --color-dna-ink: #241329;
+  --color-dna-gold: #d7a948;
+
+  --font-display: var(--font-bricolage), ui-sans-serif, system-ui, sans-serif;
+  --font-body: var(--font-bricolage), ui-sans-serif, system-ui, sans-serif;
+
+  /* Raio por hierarquia: produto > painel > campo > chip (pílula). */
+  --radius-card: 1.75rem;
+  --radius-panel: 1.5rem;
+  --radius-field: 0.875rem;
+
+  /* Sombras tingidas de açaí, nunca cinza neutro. */
+  --shadow-card: 0 28px 60px -28px rgb(26 10 31 / 0.75);
+  --shadow-lift: 0 36px 80px -30px rgb(26 10 31 / 0.85), 0 0 0 1px rgb(185 138 196 / 0.12);
+  --shadow-cup: 0 60px 90px -40px rgb(0 0 0 / 0.8);
+  --shadow-cta: 0 18px 40px -16px rgb(47 125 79 / 0.65);
+
+  --spacing-section: clamp(4.5rem, 11vw, 9rem);
+  --spacing-gutter: clamp(1rem, 4vw, 2.5rem);
+  --container-shell: 78rem;
+
+  --ease-dna: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-pour: cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+@layer components {
+  .dna-store {
+    background: var(--color-dna-night);
+    color: var(--color-dna-cream);
+    font-family: var(--font-body);
+    font-optical-sizing: auto;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .dna-store :focus-visible {
+    outline: 2px solid var(--color-dna-cream);
+    outline-offset: 3px;
+    border-radius: 0.5rem;
+  }
+
+  .dna-store ::selection {
+    background: var(--color-dna-berry);
+    color: var(--color-dna-cream);
+  }
+
+  .dna-shell {
+    width: 100%;
+    max-width: var(--container-shell);
+    margin-inline: auto;
+    padding-inline: var(--spacing-gutter);
+  }
+
+  /* Título de campanha: tamanho ótico máximo, largura condensada, peso total. */
+  .dna-display {
+    font-family: var(--font-display);
+    font-variation-settings: "opsz" 96, "wdth" 75;
+    font-weight: 800;
+    line-height: 0.86;
+    letter-spacing: -0.025em;
+    text-wrap: balance;
+  }
+
+  .dna-title {
+    font-family: var(--font-display);
+    font-variation-settings: "opsz" 48, "wdth" 82;
+    font-weight: 750;
+    line-height: 0.95;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+  }
+
+  .dna-lede {
+    font-variation-settings: "opsz" 18;
+    font-size: clamp(1.05rem, 1.6vw, 1.25rem);
+    line-height: 1.55;
+    max-width: 38ch;
+    text-wrap: pretty;
+  }
+
+  .dna-price {
+    font-variation-settings: "opsz" 32, "wdth" 85;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+
+  /* Botões: alvo mínimo de 48px, resposta física curta ao toque. */
+  .dna-btn {
+    display: inline-flex;
+    min-height: 3rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 999px;
+    padding-inline: 1.5rem;
+    font-weight: 700;
+    font-size: 1rem;
+    line-height: 1;
+    transition:
+      transform 220ms var(--ease-dna),
+      background-color 220ms var(--ease-dna),
+      box-shadow 220ms var(--ease-dna),
+      color 220ms var(--ease-dna);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .dna-btn:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+
+  .dna-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+  }
+
+  .dna-btn-primary {
+    background: var(--color-dna-leaf);
+    color: #fff;
+    box-shadow: var(--shadow-cta);
+  }
+
+  .dna-btn-primary:hover:not(:disabled) {
+    background: #348a58;
+  }
+
+  .dna-btn-cream {
+    background: var(--color-dna-cream);
+    color: var(--color-dna-ink);
+  }
+
+  .dna-btn-cream:hover:not(:disabled) {
+    background: #fff;
+  }
+
+  .dna-btn-ghost {
+    border: 1px solid rgb(246 240 230 / 0.28);
+    color: var(--color-dna-cream);
+  }
+
+  .dna-btn-ghost:hover:not(:disabled) {
+    background: rgb(246 240 230 / 0.08);
+    border-color: rgb(246 240 230 / 0.5);
+  }
+
+  /* Chips de escolha (tamanho, complemento). Estado vem do ARIA. */
+  .dna-chip {
+    display: inline-flex;
+    min-height: 2.75rem;
+    align-items: center;
+    gap: 0.5rem;
+    border-radius: 999px;
+    border: 1px solid rgb(246 240 230 / 0.18);
+    padding-inline: 1rem;
+    font-weight: 600;
+    color: rgb(246 240 230 / 0.85);
+    transition:
+      background-color 200ms var(--ease-dna),
+      border-color 200ms var(--ease-dna),
+      color 200ms var(--ease-dna);
+  }
+
+  .dna-chip:hover {
+    border-color: rgb(246 240 230 / 0.4);
+  }
+
+  .dna-chip[aria-pressed="true"],
+  .dna-chip[aria-selected="true"],
+  .dna-chip[aria-checked="true"] {
+    background: var(--color-dna-cream);
+    border-color: var(--color-dna-cream);
+    color: var(--color-dna-ink);
+  }
+
+  .dna-chip[aria-disabled="true"] {
+    cursor: not-allowed;
+    opacity: 0.4;
+  }
+
+  /* Card de produto: superfície de açaí com profundidade; a foto pode vazar. */
+  .dna-card {
+    position: relative;
+    border-radius: var(--radius-card);
+    background:
+      radial-gradient(120% 80% at 50% 0%, rgb(109 42 122 / 0.55) 0%, transparent 60%),
+      linear-gradient(180deg, var(--color-dna-plum) 0%, #1f0d24 100%);
+    box-shadow: var(--shadow-card);
+    isolation: isolate;
+  }
+
+  .dna-card::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    border: 1px solid rgb(246 240 230 / 0.07);
+    pointer-events: none;
+  }
+
+  /* Vidro escuro: header após scroll, docks e painéis flutuantes. */
+  .dna-glass {
+    background: rgb(26 10 31 / 0.62);
+    -webkit-backdrop-filter: blur(18px) saturate(150%);
+    backdrop-filter: blur(18px) saturate(150%);
+    border: 1px solid rgb(246 240 230 / 0.08);
+  }
+
+  /* Superfície clara para leitura e formulários (carrinho, checkout). */
+  .dna-paper {
+    background: var(--color-dna-cream);
+    color: var(--color-dna-ink);
+  }
+
+  .dna-field {
+    min-height: 3rem;
+    width: 100%;
+    border-radius: var(--radius-field);
+    border: 1px solid rgb(36 19 41 / 0.16);
+    background: #fff;
+    padding-inline: 0.9rem;
+    color: var(--color-dna-ink);
+    transition: border-color 160ms ease, box-shadow 160ms ease;
+  }
+
+  .dna-field::placeholder {
+    color: rgb(36 19 41 / 0.42);
+  }
+
+  .dna-field:focus {
+    outline: none;
+    border-color: var(--color-dna-berry);
+    box-shadow: 0 0 0 3px rgb(109 42 122 / 0.18);
+  }
+
+  .dna-label {
+    font-size: 0.875rem;
+    font-weight: 650;
+    color: rgb(36 19 41 / 0.78);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dna-store *,
+  .dna-store *::before,
+  .dna-store *::after {
+    transition-duration: 1ms !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}
