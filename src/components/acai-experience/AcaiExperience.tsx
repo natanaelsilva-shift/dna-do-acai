@@ -131,6 +131,8 @@ export function AcaiExperience() {
         // ---------- Intro ----------
         if (tier === "low") {
           gsap.set(q(".ax-intro"), { autoAlpha: 1 });
+          // Sem montagem animada, as deixas não têm função e cobririam o slogan.
+          gsap.set(q(".ax-cue"), { autoAlpha: 0 });
           gsap.set(q(".ax-line-inner"), { color: "var(--color-dna-cream)" });
           html.classList.remove("dna-intro-pending");
         } else {
