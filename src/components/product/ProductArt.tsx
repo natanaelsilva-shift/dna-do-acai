@@ -32,13 +32,16 @@ export function ProductArt({
 
   const count = visual.cups.length;
 
+  // Copos em posição absoluta: a composição nunca define a largura do card
+  // (em flex, três copos lado a lado estouravam a tela no celular).
   return (
-    <div className={`relative flex items-end justify-center overflow-visible ${className}`} role="img" aria-label={product.name}>
+    <div className={`relative ${className}`} role="img" aria-label={product.name}>
       {visual.cups.map((kind, index) => {
         const isCenter = count === 1 || (count === 3 && index === 1);
         const behind = count > 1 && !isCenter;
+        // Deslocamento em % da largura do próprio copo.
         const offset =
-          count === 1 ? 0 : count === 2 ? (index === 0 ? -6 : 6) : (index - 1) * 24;
+          count === 1 ? 0 : count === 2 ? (index === 0 ? -34 : 34) : (index - 1) * 58;
 
         return (
           <Cup
@@ -46,11 +49,13 @@ export function ProductArt({
             kind={kind}
             priority={priority && index === 0}
             style={{
+              position: "absolute",
+              bottom: 0,
+              left: "50%",
               height: `${(behind ? 84 : 100) * visual.scale * cupImages[kind].frame}%`,
-              transform: `translateX(${offset}%)`,
+              transform: `translateX(${offset - 50}%)`,
               zIndex: behind ? 1 : 2,
               filter: behind ? "brightness(0.78)" : undefined,
-              marginInline: count === 3 ? "-17%" : count === 2 ? "-12%" : undefined,
             }}
           />
         );

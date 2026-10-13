@@ -36,14 +36,6 @@ export function SiteHeader() {
     return () => window.removeEventListener("keydown", close);
   }, [menuOpen]);
 
-  function handleCartClick() {
-    if (window.matchMedia("(min-width: 1024px)").matches) {
-      document.getElementById("sacola")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      return;
-    }
-    openCartDrawer();
-  }
-
   return (
     <header
       className={`fixed inset-x-0 top-0 z-50 transition-[background-color,border-color,backdrop-filter] duration-300 ${
@@ -77,7 +69,7 @@ export function SiteHeader() {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={handleCartClick}
+            onClick={openCartDrawer}
             className="relative grid size-11 place-items-center rounded-full text-dna-cream transition-colors hover:bg-white/8"
             aria-label={
               totalItems > 0

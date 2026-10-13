@@ -275,12 +275,9 @@ export function CupBuilder() {
             {added ? (
               <p className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-dna-forest/70 px-4 py-3 text-sm">
                 {added}
-                <button type="button" onClick={openCartDrawer} className="font-semibold underline underline-offset-4 lg:hidden">
+                <button type="button" onClick={openCartDrawer} className="font-semibold underline underline-offset-4">
                   Ver sacola
                 </button>
-                <a href="#sacola" className="hidden font-semibold underline underline-offset-4 lg:inline">
-                  Ver sacola
-                </a>
               </p>
             ) : null}
           </div>

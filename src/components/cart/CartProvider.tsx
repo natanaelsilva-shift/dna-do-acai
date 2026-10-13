@@ -4,7 +4,6 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -37,49 +36,6 @@ export function CartProvider({ children }: { children: ReactNode }) {
     (total, item) => total + item.unitPrice * item.quantity,
     0,
   );
-
-  useEffect(() => {
-    if (!isCartDrawerOpen) {
-      return;
-    }
-
-    const originalOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    return () => {
-      document.body.style.overflow = originalOverflow;
-    };
-  }, [isCartDrawerOpen]);
-
-  useEffect(() => {
-    if (!isCartDrawerOpen) {
-      return;
-    }
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setIsCartDrawerOpen(false);
-      }
-    }
-
-    window.addEventListener("keydown", handleKeyDown);
-
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isCartDrawerOpen]);
-
-  useEffect(() => {
-    const desktopQuery = window.matchMedia("(min-width: 1024px)");
-
-    function handleBreakpointChange(event: MediaQueryListEvent) {
-      if (event.matches) {
-        setIsCartDrawerOpen(false);
-      }
-    }
-
-    desktopQuery.addEventListener("change", handleBreakpointChange);
-
-    return () => desktopQuery.removeEventListener("change", handleBreakpointChange);
-  }, []);
 
   const getProductQuantity = useCallback(
     (productId: string) =>
@@ -149,13 +105,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   const clearCart = useCallback(() => setCart({}), []);
 
-  const openCartDrawer = useCallback(() => {
-    if (window.matchMedia("(min-width: 1024px)").matches) {
-      return;
-    }
-
-    setIsCartDrawerOpen(true);
-  }, []);
+  // Sacola em drawer (desktop) / bottom sheet (celular). Scroll lock, Escape e
+  // foco ficam no próprio diálogo (useDialog).
+  const openCartDrawer = useCallback(() => setIsCartDrawerOpen(true), []);
 
   const closeCartDrawer = useCallback(() => setIsCartDrawerOpen(false), []);
 

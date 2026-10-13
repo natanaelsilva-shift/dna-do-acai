@@ -1,7 +1,7 @@
 import Image from "next/image";
 import { AcaiExperience } from "@/components/acai-experience/AcaiExperience";
-import { MenuCatalog } from "@/components/MenuCatalog";
 import { SiteHeader } from "@/components/navigation/SiteHeader";
+import { StoreOverlays } from "@/components/store/StoreOverlays";
 import { StoreProvider } from "@/components/store/StoreProvider";
 import { DnaWave } from "@/sections/DnaWave";
 import { MenuSection } from "@/sections/MenuSection";
@@ -157,7 +157,7 @@ export default async function Home() {
 
 
       <MenuSection />
-      <MenuCatalog />
+      <StoreOverlays />
 
       <section
         id="sobre"

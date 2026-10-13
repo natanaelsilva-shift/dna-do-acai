@@ -409,3 +409,36 @@ html.dna-intro-pending .ax-line-inner {
 .dna-layer-in {
   animation: dna-layer-in 420ms var(--ease-dna) both;
 }
+
+/* Entrada de sheets/diálogos: sobe no celular, desliza da direita no desktop. */
+@keyframes dna-sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes dna-sheet-left {
+  from {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes dna-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.dna-sheet-in {
+  animation: dna-sheet-up 420ms var(--ease-dna) both;
+}
+
+@media (min-width: 1024px) {
+  .dna-sheet-in {
+    animation-name: dna-sheet-left;
+  }
+}
+
+.dna-fade-in {
+  animation: dna-fade 300ms ease both;
+}

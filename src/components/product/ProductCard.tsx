@@ -26,12 +26,12 @@ export function ProductCard({
   const combo = isComboProduct(product);
   const feature = variant === "feature";
 
+  // O espaço para a foto vazar acima do card fica no padding do wrapper (e não
+  // em margem no card): com h-full dentro do grid, margem faria o card invadir
+  // a seção seguinte.
   return (
-    <article
-      className={`dna-card group flex h-full flex-col transition-transform duration-500 ease-[var(--ease-dna)] hover:-translate-y-1 ${
-        feature ? "mt-16 lg:mt-24" : "mt-14"
-      }`}
-    >
+    <div className={`h-full ${feature ? "pt-16 lg:pt-24" : "pt-14"}`}>
+    <article className="dna-card group flex h-full flex-col transition-transform duration-500 ease-[var(--ease-dna)] hover:-translate-y-1">
       <div
         className={`relative transition-transform duration-500 ease-[var(--ease-dna)] group-hover:-translate-y-2 group-hover:scale-[1.03] motion-reduce:transform-none ${
           feature ? "-mt-16 h-80 lg:-mt-24 lg:h-[26rem]" : "-mt-14 h-72"
@@ -119,5 +119,6 @@ export function ProductCard({
         </div>
       </div>
     </article>
+    </div>
   );
 }
