@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
 import type { ComboCup, ComplementGroup, ComplementOption, Product } from "@/data/menu";
 import type { DeliveryMethod, OrderCustomizationLine, PaymentMethod } from "@/data/orders";
 import { useCustomizer } from "@/components/builder/CustomizerProvider";
@@ -11,7 +10,6 @@ import { useStore } from "@/components/store/StoreProvider";
 import type { CartItem } from "@/lib/cart/types";
 import {
   getOptionQuantity,
-  isComboProduct,
   isQuantityGroup,
   type SelectionState,
 } from "@/lib/catalog/customization";
@@ -19,12 +17,11 @@ import { paymentLabels, type CheckoutForm, type SubmitState } from "@/lib/checko
 import { formatCurrency, formatOptionPrice } from "@/lib/format/currency";
 
 export function MenuCatalog() {
-  const { categories, products, isStoreOpen, storeStatusLabel } = useStore();
+  const { isStoreOpen } = useStore();
   const {
     cartItems,
     totalItems,
     totalPrice,
-    getProductQuantity,
     incrementCartItem,
     decrementCartItem,
     isCartDrawerOpen,
@@ -43,8 +40,6 @@ export function MenuCatalog() {
     customizedPrice,
     isCustomizationValid,
     customizationError,
-    addProduct: addSimpleProduct,
-    openCustomizer,
     confirmCustomization,
     goToPreviousComboCup,
     resetCurrentCustomization,
@@ -62,115 +57,10 @@ export function MenuCatalog() {
     updateCheckoutField,
     submitOrder,
   } = useCheckout();
-  const [activeCategory, setActiveCategory] = useState("todos");
-
-  const visibleProducts =
-    activeCategory === "todos"
-      ? products
-      : products.filter((product) => product.categoryId === activeCategory);
-
-  function decrementSimpleProduct(productId: string) {
-    decrementCartItem(productId);
-  }
-
+  // Provisório (até o redesign do carrinho): só sacola, dock e personalizador.
   return (
-    <section
-      id="cardapio"
-      className="bg-[#fffaf0] px-4 py-10 pb-28 md:px-8 lg:py-14"
-    >
-      <div className="mx-auto max-w-7xl">
-        <div className="flex flex-col justify-between gap-6 border-b border-[#d7a948]/35 pb-7 md:flex-row md:items-end">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#4b164c] md:text-sm md:tracking-[0.18em]">
-              Cardápio digital
-            </p>
-            <h2 className="mt-3 text-2xl font-semibold text-[#103d2c] sm:text-3xl md:text-4xl">
-              Monte seu pedido DNA
-            </h2>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-[#526354]">
-              Escolha entre Monte Seu Açaí, Açaí Puro e Combos. Nos copos
-              personalizados, selecione os complementos dentro do limite de cada
-              tamanho.
-            </p>
-          </div>
-
-          <div className="flex flex-col items-stretch gap-3 md:items-end">
-            <StoreStatusBadge
-              isOpen={isStoreOpen}
-              label={storeStatusLabel}
-            />
-            <CartTotal
-              totalItems={totalItems}
-              totalPrice={orderTotal}
-              onOpen={openCartDrawer}
-            />
-          </div>
-        </div>
-
-        {!isStoreOpen ? <StoreClosedNotice /> : null}
-
-        <div className="sticky top-0 z-10 -mx-4 mt-6 border-y border-[#d7a948]/25 bg-[#fffaf0]/95 px-4 py-3 backdrop-blur md:top-0 md:-mx-8 md:px-8">
-          <div className="mx-auto flex max-w-7xl gap-2 overflow-x-auto pb-1">
-            <CategoryButton
-              active={activeCategory === "todos"}
-              count={products.length}
-              label="Todos"
-              onClick={() => setActiveCategory("todos")}
-            />
-            {categories.map((category) => (
-              <CategoryButton
-                key={category.id}
-                active={activeCategory === category.id}
-                count={
-                  products.filter((product) => product.categoryId === category.id).length
-                }
-                label={category.name}
-                onClick={() => setActiveCategory(category.id)}
-              />
-            ))}
-          </div>
-        </div>
-
-        <div className="grid gap-8 pt-8 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="min-w-0 space-y-8">
-            {activeCategory === "todos" ? (
-              categories.map((category) => {
-                const categoryProducts = products.filter(
-                  (product) => product.categoryId === category.id,
-                );
-
-                return (
-                  <ProductSection
-                    key={category.id}
-                    title={category.name}
-                    description={category.description}
-                    products={categoryProducts}
-                    getProductQuantity={getProductQuantity}
-                    onAdd={addSimpleProduct}
-                    onCustomize={openCustomizer}
-                    onRemove={decrementSimpleProduct}
-                  />
-                );
-              })
-            ) : (
-              <ProductSection
-                title={
-                  categories.find((category) => category.id === activeCategory)?.name ??
-                  "Produtos"
-                }
-                description={
-                  categories.find((category) => category.id === activeCategory)
-                    ?.description ?? "Seleção da casa."
-                }
-                products={visibleProducts}
-                getProductQuantity={getProductQuantity}
-                onAdd={addSimpleProduct}
-                onCustomize={openCustomizer}
-                onRemove={decrementSimpleProduct}
-              />
-            )}
-          </div>
-
+    <section id="sacola" className="scroll-mt-24 bg-dna-night pb-28 pt-16 text-[#16221a] lg:pb-24">
+      <div className="mx-auto max-w-xl px-4">
           <OrderSummary
             cartItems={cartItems}
             checkout={checkout}
@@ -185,7 +75,6 @@ export function MenuCatalog() {
             onCheckoutChange={updateCheckoutField}
             onSubmit={submitOrder}
           />
-        </div>
       </div>
 
       <MobileCartDock
@@ -249,79 +138,6 @@ export function MenuCatalog() {
   );
 }
 
-function StoreStatusBadge({
-  isOpen,
-  label,
-}: {
-  isOpen: boolean;
-  label: string;
-}) {
-  return (
-    <div
-      className={`inline-flex min-h-10 w-full items-center justify-center gap-2 border px-4 text-sm font-semibold text-white md:w-auto ${
-        isOpen ? "border-[#16a34a] bg-[#16a34a]" : "border-[#dc2626] bg-[#dc2626]"
-      }`}
-    >
-      <span className="size-2 rounded-full bg-white" aria-hidden="true" />
-      {label}
-    </div>
-  );
-}
-
-function StoreClosedNotice() {
-  return (
-    <div className="mt-5 rounded-[8px] border border-[#4b164c]/25 bg-[#4b164c] px-4 py-4 text-white shadow-[0_16px_38px_rgba(75,22,76,0.18)]">
-      <p className="text-sm font-semibold leading-6 sm:text-base">
-        No momento estamos fechados. Volte em breve 💜
-      </p>
-    </div>
-  );
-}
-
-function CartTotal({
-  onOpen,
-  totalItems,
-  totalPrice,
-}: {
-  onOpen?: () => void;
-  totalItems: number;
-  totalPrice: number;
-}) {
-  const content = (
-    <>
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#4b164c]">
-          Sacola
-        </p>
-        <p className="text-sm font-semibold text-[#103d2c]">
-          {totalItems} {totalItems === 1 ? "item" : "itens"}
-        </p>
-      </div>
-      <p className="text-lg font-semibold text-[#4b164c]">
-        {formatCurrency(totalPrice)}
-      </p>
-    </>
-  );
-
-  if (onOpen) {
-    return (
-      <button
-        type="button"
-        onClick={onOpen}
-        className="flex min-h-14 w-full items-center justify-between gap-4 border border-[#d7a948]/45 bg-white px-4 text-left transition hover:border-[#d7a948] hover:bg-[#fff7e3] md:w-auto"
-      >
-        {content}
-      </button>
-    );
-  }
-
-  return (
-    <div className="flex min-h-14 items-center justify-between gap-4 border border-[#d7a948]/45 bg-white px-4">
-      {content}
-    </div>
-  );
-}
-
 function MobileCartDock({
   onOpen,
   totalItems,
@@ -355,230 +171,6 @@ function MobileCartDock({
         </span>
       </button>
     </div>
-  );
-}
-
-function CategoryButton({
-  active,
-  count,
-  label,
-  onClick,
-}: {
-  active: boolean;
-  count: number;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex min-h-11 shrink-0 items-center gap-3 border px-4 text-sm font-semibold transition ${
-        active
-          ? "border-[#103d2c] bg-[#103d2c] text-[#f8e8b5]"
-          : "border-[#d7a948]/35 bg-white text-[#103d2c] hover:border-[#d7a948] hover:text-[#4b164c]"
-      }`}
-    >
-      <span>{label}</span>
-      <span
-        className={`grid size-6 place-items-center text-xs ${
-          active ? "bg-[#d7a948] text-[#103d2c]" : "bg-[#f3ead2] text-[#4b164c]"
-        }`}
-      >
-        {count}
-      </span>
-    </button>
-  );
-}
-
-function ProductSection({
-  title,
-  description,
-  products: sectionProducts,
-  getProductQuantity,
-  onAdd,
-  onCustomize,
-  onRemove,
-}: {
-  title: string;
-  description: string;
-  products: Product[];
-  getProductQuantity: (productId: string) => number;
-  onAdd: (product: Product) => void;
-  onCustomize: (product: Product) => void;
-  onRemove: (productId: string) => void;
-}) {
-  return (
-    <section>
-      <div className="mb-4">
-        <h3 className="text-2xl font-semibold text-[#103d2c]">{title}</h3>
-        {description ? (
-          <p className="mt-1 text-sm text-[#526354]">{description}</p>
-        ) : null}
-      </div>
-
-      <div className="grid gap-3">
-        {sectionProducts.map((product) => (
-          <ProductCard
-            key={product.id}
-            product={product}
-            quantity={getProductQuantity(product.id)}
-            onAdd={() => onAdd(product)}
-            onCustomize={() => onCustomize(product)}
-            onRemove={() => onRemove(product.id)}
-          />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function ProductCard({
-  product,
-  quantity,
-  onAdd,
-  onCustomize,
-  onRemove,
-}: {
-  product: Product;
-  quantity: number;
-  onAdd: () => void;
-  onCustomize: () => void;
-  onRemove: () => void;
-}) {
-  const metaItems = [product.serves, product.preparationTime].filter(Boolean);
-  const hasBadges = product.tag || product.customizable || metaItems.length > 0;
-  const productIsCombo = isComboProduct(product);
-  const showProductImage = Boolean(product.image) && !productIsCombo;
-
-  return (
-    <article
-      className={`grid min-h-40 grid-cols-1 gap-3 rounded-[8px] border bg-white p-3 shadow-[0_12px_34px_rgba(16,61,44,0.06)] transition hover:border-[#d7a948] hover:shadow-[0_18px_46px_rgba(16,61,44,0.12)] sm:gap-4 sm:p-4 ${
-        showProductImage
-          ? "min-[430px]:grid-cols-[minmax(0,1fr)_136px] md:grid-cols-[minmax(0,1fr)_148px]"
-          : ""
-      } ${
-        productIsCombo
-          ? "border-[#d7a948]/45 bg-[linear-gradient(180deg,#ffffff_0%,#fffaf0_100%)]"
-          : "border-[#d7a948]/30"
-      }`}
-    >
-      <div className="flex min-w-0 flex-col">
-        {hasBadges ? (
-          <div className="flex flex-wrap items-center gap-2">
-            {product.tag ? (
-              <span className="bg-[#4b164c] px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#f8e8b5]">
-                {product.tag}
-              </span>
-            ) : null}
-            {product.customizable ? (
-              <span className="border border-[#d7a948]/45 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#4b164c]">
-                Personalizável
-              </span>
-            ) : null}
-            {metaItems.length > 0 ? (
-              <span className="text-xs font-medium text-[#526354]">
-                {metaItems.join(" / ")}
-              </span>
-            ) : null}
-          </div>
-        ) : null}
-
-        <h4 className="mt-3 text-base font-semibold leading-snug text-[#103d2c] sm:text-lg">
-          {product.name}
-        </h4>
-        <p
-          className={`mt-2 text-sm leading-6 ${
-            productIsCombo
-              ? "font-medium text-[#405548]"
-              : "line-clamp-2 text-[#526354]"
-          }`}
-        >
-          {product.description}
-        </p>
-
-        <div className="mt-auto flex flex-wrap items-end justify-between gap-3 pt-4">
-          <div>
-            {product.originalPrice ? (
-              <p className="text-xs font-medium text-[#8a938b] line-through">
-                {formatCurrency(product.originalPrice)}
-              </p>
-            ) : null}
-            <p
-              className={`font-semibold text-[#4b164c] ${
-                productIsCombo ? "text-xl sm:text-2xl" : "text-lg"
-              }`}
-            >
-              {formatCurrency(product.price)}
-            </p>
-            {product.customizable && quantity > 0 ? (
-              <p className="mt-1 text-xs font-semibold text-[#103d2c]">
-                {quantity}{" "}
-                {productIsCombo
-                  ? quantity === 1
-                    ? "combo"
-                    : "combos"
-                  : quantity === 1
-                    ? "copo"
-                    : "copos"}{" "}
-                na sacola
-              </p>
-            ) : null}
-          </div>
-
-          {product.customizable ? (
-            <button
-              type="button"
-              onClick={onCustomize}
-              className="min-h-11 border border-[#103d2c] bg-[#103d2c] px-4 text-sm font-semibold text-white transition hover:border-[#d7a948] hover:bg-[#d7a948] hover:text-[#103d2c]"
-            >
-              {productIsCombo ? "Adicionar" : "Personalizar"}
-            </button>
-          ) : quantity > 0 ? (
-            <div className="flex min-h-11 items-center border border-[#103d2c]">
-              <button
-                type="button"
-                onClick={onRemove}
-                className="grid size-11 place-items-center text-xl font-semibold text-[#103d2c] transition hover:bg-[#f3ead2]"
-                aria-label={`Remover ${product.name}`}
-              >
-                -
-              </button>
-              <span className="grid min-w-10 place-items-center text-sm font-semibold text-[#103d2c]">
-                {quantity}
-              </span>
-              <button
-                type="button"
-                onClick={onAdd}
-                className="grid size-11 place-items-center bg-[#103d2c] text-xl font-semibold text-white transition hover:bg-[#4b164c]"
-                aria-label={`Adicionar mais ${product.name}`}
-              >
-                +
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={onAdd}
-              className="grid size-11 place-items-center bg-[#103d2c] text-xl font-semibold text-white transition hover:bg-[#4b164c]"
-              aria-label={`Adicionar ${product.name}`}
-            >
-              +
-            </button>
-          )}
-        </div>
-      </div>
-
-      {showProductImage ? (
-        <div className="relative order-first min-h-36 overflow-hidden rounded-[8px] bg-[#103d2c] min-[430px]:order-none min-[430px]:min-h-full">
-          <CatalogImage
-            src={product.image}
-            alt={product.name}
-            position={product.imagePosition}
-          />
-        </div>
-      ) : null}
-    </article>
   );
 }
 

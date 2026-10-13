@@ -4,6 +4,7 @@ import { MenuCatalog } from "@/components/MenuCatalog";
 import { SiteHeader } from "@/components/navigation/SiteHeader";
 import { StoreProvider } from "@/components/store/StoreProvider";
 import { DnaWave } from "@/sections/DnaWave";
+import { MenuSection } from "@/sections/MenuSection";
 import { MonteSection } from "@/sections/MonteSection";
 import { productImages } from "@/data/menu";
 import { getStoreStatus } from "@/lib/store-status/server";
@@ -155,6 +156,7 @@ export default async function Home() {
       <MonteSection />
 
 
+      <MenuSection />
       <MenuCatalog />
 
       <section
