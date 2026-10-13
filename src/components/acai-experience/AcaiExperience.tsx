@@ -138,9 +138,6 @@ export function AcaiExperience() {
           html.classList.remove("dna-intro-pending");
 
           const pace = isMobile ? 0.72 : 1;
-          const cueTargets = q(".ax-cue").sort(
-            (a, b) => Number(a.dataset.order) - Number(b.dataset.order),
-          );
           const intro = gsap.timeline({
             defaults: { ease: "power3.out" },
             onComplete: () => {
@@ -191,39 +188,30 @@ export function AcaiExperience() {
               0.35 * pace,
             );
 
-          // Montagem: cada complemento entra na ordem do cardápio e fica visível.
-          // Quando o recorte fotográfico existir, ele cai dentro do copo.
-          cueTargets.forEach((cue, index) => {
-            const at = (1 + index * 0.24) * pace;
-            const fromLeft = cue.dataset.side === "left";
+          // Montagem dentro do copo: recortes fotográficos dos complementos (quando
+          // existirem no manifesto) e a nuvem de leite em pó.
+          const montageAt = 1 * pace;
+          q(".ax-drop").forEach((drop, index) => {
             intro.fromTo(
-              cue,
-              { autoAlpha: 0, x: fromLeft ? -18 : 18 },
-              { autoAlpha: 1, x: 0, duration: 0.6 * pace },
-              at,
+              drop,
+              { autoAlpha: 0, yPercent: -260, rotation: index % 2 ? 24 : -24 },
+              { autoAlpha: 1, yPercent: 0, rotation: 0, duration: 0.7, ease: "power2.in" },
+              montageAt + index * 0.24 * pace,
             );
-            const drop = root.querySelector<HTMLElement>(`.ax-drop[data-cue="${cue.dataset.cue}"]`);
-            if (drop) {
-              intro.fromTo(
-                drop,
-                { autoAlpha: 0, yPercent: -260, rotation: fromLeft ? -24 : 24 },
-                { autoAlpha: 1, yPercent: 0, rotation: 0, duration: 0.7, ease: "power2.in" },
-                at,
-              );
-            }
-            if (cue.dataset.particles === "true" && powder) {
-              intro.call(() => powder?.burst(0.5, 0.3, tier === "high" ? 140 : 48), [], at);
-            }
           });
+          if (powder) {
+            intro.call(() => powder?.burst(0.5, 0.3, tier === "high" ? 140 : 48), [], montageAt + 0.4 * pace);
+          }
 
-          const afterCues = (1 + cueTargets.length * 0.24) * pace;
+          // A frase é o foco principal: acende logo depois que o copo aparece.
+          const afterMontage = 1.5 * pace;
           intro
             .call(requestVideo, [], 1.4 * pace)
             .fromTo(
               q(".ax-brand"),
               { autoAlpha: 0, yPercent: 100 },
               { autoAlpha: 1, yPercent: 0, duration: 0.7 },
-              afterCues,
+              afterMontage,
             )
             .fromTo(
               q(".ax-line-inner"),
@@ -234,13 +222,13 @@ export function AcaiExperience() {
                 stagger: 0.18,
                 ease: "power2.inOut",
               },
-              afterCues + 0.1,
+              afterMontage + 0.1,
             )
             .fromTo(
               q(".ax-desc, .ax-cta"),
               { autoAlpha: 0, y: 18 },
               { autoAlpha: 1, y: 0, duration: 0.7, stagger: 0.1 },
-              afterCues + 0.45,
+              afterMontage + 0.45,
             );
 
           if (seenIntro) {
@@ -300,8 +288,6 @@ export function AcaiExperience() {
             .to(q(".ax-s-line-a"), { yPercent: -70, autoAlpha: 0, duration: 0.3 }, 0)
             .to(q(".ax-s-line-b"), { yPercent: 70, autoAlpha: 0, duration: 0.3 }, 0)
             .to(q(".ax-s-copy, .ax-s-brand"), { autoAlpha: 0, y: -24, duration: 0.2 }, 0)
-            .to(q(".ax-s-cue-left"), { x: -80, autoAlpha: 0, duration: 0.3 }, 0.05)
-            .to(q(".ax-s-cue-right"), { x: 80, autoAlpha: 0, duration: 0.3 }, 0.05)
             .to(q(".ax-cup-move"), { scale: desktop ? 1.14 : 1.08, duration: 0.3 }, 0);
 
           if (desktop) {
@@ -380,7 +366,7 @@ export function AcaiExperience() {
             ser lida antes de tudo. O copo ocupa o espaço que sobrar e só a base
             esfumaçada dele encosta no topo da frase (que fica atrás).
           */}
-          <div className="ax-layout relative flex h-full flex-col items-center pb-[max(1rem,env(safe-area-inset-bottom))] pt-[calc(4rem+2svh)] lg:pb-8 lg:pt-[calc(5rem+2svh)]">
+          <div className="ax-layout relative flex h-full flex-col items-center justify-center pb-[max(1rem,env(safe-area-inset-bottom))] pt-[calc(4rem+2svh)] lg:pb-8 lg:pt-[calc(5rem+2svh)]">
             {/* Slogan — visível desde o primeiro paint, "acende" na intro */}
             <h1 id="hero-title" className="contents">
               <span className="ax-s-brand order-1 flex shrink-0 justify-center overflow-hidden">
@@ -389,19 +375,19 @@ export function AcaiExperience() {
                 </span>
               </span>
               <span className="ax-s-line-a relative z-0 order-3 -mt-[6svh] block w-full shrink-0 text-center lg:-mt-[9svh]">
-                <span className="ax-line-inner dna-display block text-[clamp(2.5rem,13vw,5rem)] uppercase lg:text-[min(8.2vw,12.5svh)]">
+                <span className="ax-line-inner dna-display block text-[clamp(2.6rem,14vw,5.5rem)] uppercase lg:text-[min(9vw,13.5svh)]">
                   Açaí de verdade,
                 </span>
               </span>
               <span className="ax-s-line-b relative z-0 order-4 block w-full shrink-0 text-center">
-                <span className="ax-line-inner dna-display block text-[clamp(2.5rem,13vw,5rem)] uppercase [text-shadow:0_20px_60px_rgb(26_10_31/0.6)] lg:text-[min(8.2vw,12.5svh)]">
+                <span className="ax-line-inner dna-display block text-[clamp(2.6rem,14vw,5.5rem)] uppercase [text-shadow:0_20px_60px_rgb(26_10_31/0.6)] lg:text-[min(9vw,13.5svh)]">
                   do seu jeito.
                 </span>
               </span>
             </h1>
 
             {/* Copo */}
-            <div className="relative z-10 order-2 mt-[1svh] w-full min-h-0 flex-1">
+            <div className="relative z-10 order-2 mt-[1svh] max-h-[46svh] w-full min-h-0 flex-1 lg:max-h-none">
               <div className="ax-cup-move relative mx-auto h-full w-fit">
                 <div className="ax-cup-par relative h-full">
                   <div className="ax-cup-float relative h-full">
@@ -467,15 +453,14 @@ export function AcaiExperience() {
               </div>
             </div>
 
-            {/* Complementos, descrição e CTAs — abaixo da frase */}
-            <div className="ax-s-copy relative z-20 order-5 mt-[2.5svh] w-full shrink-0">
-              <div className="dna-shell grid items-end gap-5 xl:grid-cols-[1fr_auto_1fr] xl:gap-10">
-                <CueBoard />
-                <p className="ax-desc ax-intro dna-lede text-center text-dna-cream/80 max-lg:mx-auto max-lg:text-[0.95rem] lg:mx-auto xl:order-first xl:mx-0 xl:text-left [@media(max-height:820px)]:hidden">
+            {/* Subtítulo e CTAs — centralizados abaixo da frase */}
+            <div className="ax-s-copy relative z-20 order-5 mt-[2.5svh] w-full shrink-0 lg:mt-[3svh]">
+              <div className="dna-shell flex flex-col items-center gap-5 text-center lg:gap-6">
+                <p className="ax-desc ax-intro dna-lede mx-auto max-w-[40ch] text-dna-cream/80 max-lg:text-[0.95rem] [@media(max-height:820px)]:hidden">
                   Monte sua combinação favorita e transforme cada copo em uma
                   experiência única.
                 </p>
-                <div className="ax-cta ax-intro grid grid-cols-2 gap-3 sm:flex sm:justify-center xl:justify-end">
+                <div className="ax-cta ax-intro grid w-full grid-cols-2 gap-3 sm:flex sm:w-auto sm:justify-center">
                   <a href="#monte" className="dna-btn dna-btn-primary">
                     Monte o seu
                   </a>
@@ -533,60 +518,5 @@ export function AcaiExperience() {
         </div>
       </div>
     </section>
-  );
-}
-
-// Complementos da montagem em duas colunas, abaixo da frase. Traços curtos
-// ligam cada nome a um eixo central que aponta para o copo — o eixo termina
-// na linha divisória e nunca atravessa a frase.
-function CueBoard() {
-  const left = ingredientCues.filter((_, index) => index % 2 === 0);
-  const right = ingredientCues.filter((_, index) => index % 2 === 1);
-
-  return (
-    <div
-      aria-label="Complementos da montagem"
-      className="ax-cues-par mx-auto w-full max-w-[22rem] border-t border-dna-cream/15 pt-3 lg:max-w-[34rem] lg:pt-4"
-    >
-      <div className="grid grid-cols-[1fr_auto_1fr] items-stretch">
-        <CueColumn cues={left} side="left" />
-        <span aria-hidden="true" className="w-px bg-gradient-to-b from-dna-cream/45 to-dna-cream/10" />
-        <CueColumn cues={right} side="right" />
-      </div>
-    </div>
-  );
-}
-
-function CueColumn({
-  cues,
-  side,
-}: {
-  cues: typeof ingredientCues;
-  side: "left" | "right";
-}) {
-  return (
-    <ul className={`ax-s-cue-${side} grid gap-1.5 lg:gap-2`}>
-      {cues.map((cue) => (
-        <li
-          key={cue.id}
-          className={`ax-cue ax-intro flex items-center gap-2 ${
-            side === "left" ? "flex-row justify-end text-right" : "flex-row-reverse justify-end text-left"
-          }`}
-          data-side={side}
-          data-cue={cue.id}
-          data-order={ingredientCues.indexOf(cue)}
-          data-particles={cue.particles ? "true" : undefined}
-        >
-          <span className="whitespace-nowrap text-sm font-semibold leading-tight text-dna-cream [text-shadow:0_1px_12px_rgb(26_10_31/0.9)] lg:text-lg">
-            {cue.label}
-          </span>
-          <span aria-hidden="true" className="h-px w-4 shrink-0 bg-dna-cream/55 sm:w-6 lg:w-10" />
-          <span
-            aria-hidden="true"
-            className={`size-1.5 shrink-0 rounded-full bg-dna-sprout ${side === "left" ? "-mr-[3.5px]" : "-ml-[3.5px]"}`}
-          />
-        </li>
-      ))}
-    </ul>
   );
 }
