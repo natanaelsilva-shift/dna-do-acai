@@ -2,12 +2,14 @@ import type { Metadata, Viewport } from "next";
 import { Bricolage_Grotesque } from "next/font/google";
 import "./globals.css";
 
-// Uma família variável com dois papéis: tamanho ótico de display (títulos,
-// pesados e condensados) e de texto (corpo). Aplicada só na loja via
+// Uma família variável com dois papéis: títulos pesados e condensados (wdth)
+// e texto corrido na largura normal. Aplicada só na loja via
 // `.dna-store`; o painel admin mantém a fonte do sistema.
 const bricolage = Bricolage_Grotesque({
   subsets: ["latin"],
-  axes: ["opsz", "wdth"],
+  // Sem o eixo opsz: a fonte cai de ~128 KB para ~76 KB (latin) e o
+  // condensado dos títulos (wdth) continua igual.
+  axes: ["wdth"],
   display: "swap",
   variable: "--font-bricolage",
 });

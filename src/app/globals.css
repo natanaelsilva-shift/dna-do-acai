@@ -138,7 +138,6 @@ select {
     background: var(--color-dna-night);
     color: var(--color-dna-cream);
     font-family: var(--font-body);
-    font-optical-sizing: auto;
     -webkit-font-smoothing: antialiased;
   }
 
@@ -168,7 +167,7 @@ select {
   /* Título de campanha: tamanho ótico máximo, largura condensada, peso total. */
   .dna-display {
     font-family: var(--font-display);
-    font-variation-settings: "opsz" 96, "wdth" 75;
+    font-variation-settings: "wdth" 75;
     font-weight: 800;
     line-height: 0.86;
     letter-spacing: -0.025em;
@@ -177,7 +176,7 @@ select {
 
   .dna-title {
     font-family: var(--font-display);
-    font-variation-settings: "opsz" 48, "wdth" 82;
+    font-variation-settings: "wdth" 82;
     font-weight: 750;
     line-height: 0.95;
     letter-spacing: -0.015em;
@@ -185,7 +184,6 @@ select {
   }
 
   .dna-lede {
-    font-variation-settings: "opsz" 18;
     font-size: clamp(1.05rem, 1.6vw, 1.25rem);
     line-height: 1.55;
     max-width: 38ch;
@@ -193,7 +191,7 @@ select {
   }
 
   .dna-price {
-    font-variation-settings: "opsz" 32, "wdth" 85;
+    font-variation-settings: "wdth" 85;
     font-weight: 800;
     font-variant-numeric: tabular-nums;
     letter-spacing: -0.01em;
@@ -378,6 +376,21 @@ html.dna-intro-pending .ax-intro {
 html.dna-intro-pending .ax-line-inner {
   color: rgb(246 240 230 / 0.1);
   animation: dna-intro-failsafe-color 0.8s ease 2.8s forwards;
+}
+
+/* O copo é o LCP: fica visível (opacidade 1) desde o primeiro paint, só
+   escuro e desfocado até a intro revelar. */
+html.dna-intro-pending .ax-cup {
+  filter: blur(14px) brightness(0.35);
+  transform: translateY(40px) scale(0.94);
+  animation: dna-intro-failsafe-cup 0.8s ease 2.8s forwards;
+}
+
+@keyframes dna-intro-failsafe-cup {
+  to {
+    filter: none;
+    transform: none;
+  }
 }
 
 @keyframes dna-intro-failsafe {

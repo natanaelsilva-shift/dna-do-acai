@@ -6,7 +6,6 @@ import {
   type StoreStatus,
   type StoreStatusPayload,
 } from "@/data/store-status";
-import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 
 type UseStoreStatusOptions = {
   initialStatus?: StoreStatusPayload;
@@ -191,34 +190,46 @@ export function useStoreStatus({
     };
   }, [poll, refresh]);
 
+  // Realtime carregado sob demanda: o cliente Supabase (~70 KB gz) não entra
+  // no carregamento inicial da loja. A consulta periódica cobre o intervalo.
   useEffect(() => {
-    if (!isSupabaseConfigured()) {
-      return;
-    }
+    let disposed = false;
+    let cleanup: (() => void) | undefined;
 
-    const supabase = createClient();
-    const channel = supabase
-      .channel(`store-status-${Math.random().toString(36).slice(2)}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "store_settings",
-          filter: "id=eq.main",
-        },
-        (event) => {
-          const payload = rowToPayload(event.new as StoreStatusRow);
-          if (payload && mountedRef.current) {
-            applyDatabaseStatus(payload);
-            setError("");
-          }
-        },
-      )
-      .subscribe();
+    void import("@/lib/supabase/client").then(({ createClient, isSupabaseConfigured }) => {
+      if (disposed || !isSupabaseConfigured()) {
+        return;
+      }
+
+      const supabase = createClient();
+      const channel = supabase
+        .channel(`store-status-${Math.random().toString(36).slice(2)}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "store_settings",
+            filter: "id=eq.main",
+          },
+          (event) => {
+            const payload = rowToPayload(event.new as StoreStatusRow);
+            if (payload && mountedRef.current) {
+              applyDatabaseStatus(payload);
+              setError("");
+            }
+          },
+        )
+        .subscribe();
+
+      cleanup = () => {
+        void supabase.removeChannel(channel);
+      };
+    });
 
     return () => {
-      void supabase.removeChannel(channel);
+      disposed = true;
+      cleanup?.();
     };
   }, [applyDatabaseStatus]);
 

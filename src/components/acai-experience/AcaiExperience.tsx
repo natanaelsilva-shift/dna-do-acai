@@ -178,12 +178,13 @@ export function AcaiExperience() {
             )
             .fromTo(
               q(".ax-cup"),
-              { autoAlpha: 0, y: 70, scale: 0.92, filter: "blur(14px)" },
+              // O copo já está pintado (escuro e desfocado) desde o primeiro
+              // frame: o LCP não espera o JS. A intro só o revela.
+              { y: 40, scale: 0.94, filter: "blur(14px) brightness(0.35)" },
               {
-                autoAlpha: 1,
                 y: 0,
                 scale: 1,
-                filter: "blur(0px)",
+                filter: "blur(0px) brightness(1)",
                 duration: 1.2 * pace,
                 clearProps: "filter",
               },
@@ -409,7 +410,7 @@ export function AcaiExperience() {
           <div className="ax-cup-move absolute left-1/2 top-[47%] z-10 h-[min(50svh,560px)] -translate-x-1/2 -translate-y-1/2 lg:top-1/2 lg:h-[min(76svh,880px)]">
             <div className="ax-cup-par relative h-full">
               <div className="ax-cup-float relative h-full">
-                <div className="ax-cup ax-intro relative aspect-[9/16] h-full">
+                <div className="ax-cup relative aspect-[9/16] h-full">
                   <div className="ax-cup-mask absolute inset-0">
                     <picture>
                       <source
