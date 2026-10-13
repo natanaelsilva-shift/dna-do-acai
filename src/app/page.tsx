@@ -2,6 +2,7 @@ import Image from "next/image";
 import { ClientPwaInstall } from "@/components/ClientPwaInstall";
 import { HeroMedia } from "@/components/HeroMedia";
 import { MenuCatalog } from "@/components/MenuCatalog";
+import { StoreProvider } from "@/components/store/StoreProvider";
 import { categories, productImages } from "@/data/menu";
 import { getStoreStatus } from "@/lib/store-status/server";
 
@@ -138,6 +139,7 @@ export default async function Home() {
   const initialStoreStatus = await getStoreStatus().catch(() => undefined);
 
   return (
+    <StoreProvider initialStoreStatus={initialStoreStatus}>
     <main className="min-h-screen overflow-x-clip bg-[#fffaf0] text-[#16221a]">
       <header className="relative z-20 border-b border-[#d7a948]/20 bg-[#071a14] text-white">
         <div className="mx-auto max-w-7xl px-4 py-3 md:px-8 md:py-4">
@@ -229,7 +231,7 @@ export default async function Home() {
         </div>
       </section>
 
-      <MenuCatalog initialStoreStatus={initialStoreStatus} />
+      <MenuCatalog />
 
       <section
         id="sobre"
@@ -354,5 +356,6 @@ export default async function Home() {
         </div>
       </footer>
     </main>
+    </StoreProvider>
   );
 }

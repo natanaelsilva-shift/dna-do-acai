@@ -1,609 +1,76 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useState } from "react";
+import type { ComboCup, ComplementGroup, ComplementOption, Product } from "@/data/menu";
+import type { DeliveryMethod, OrderCustomizationLine, PaymentMethod } from "@/data/orders";
+import { useCustomizer } from "@/components/builder/CustomizerProvider";
+import { useCart } from "@/components/cart/CartProvider";
+import { useCheckout } from "@/components/checkout/CheckoutProvider";
+import { useStore } from "@/components/store/StoreProvider";
+import type { CartItem } from "@/lib/cart/types";
 import {
-  getCatalogStorageSnapshot,
-  initialCatalog,
-  migrateLegacyCatalogStorage,
-  parseCatalogStorageSnapshot,
-  type ComboCup,
-  type ComplementGroup,
-  type ComplementOption,
-  type Product,
-} from "@/data/menu";
-import {
-  type CreateOrderPayload,
-  type DeliveryMethod,
-  type OrderCustomizationLine,
-  type PaymentMethod,
-} from "@/data/orders";
-import type { CartItem, Cart } from "@/lib/cart/types";
-import {
-  calculateComboCustomizedPrice,
-  calculateCustomizedPrice,
-  buildComboCustomizationLines,
-  buildComboCustomizedItemId,
-  buildCustomizationLines,
-  buildCustomizedItemId,
-  getComplementGroupsForLimit,
-  getComplementGroupsForProduct,
-  getCustomizableComboCups,
-  getDefaultSelections,
   getOptionQuantity,
-  getPureComboCups,
   isComboProduct,
   isQuantityGroup,
   type SelectionState,
 } from "@/lib/catalog/customization";
-import {
-  initialCheckoutForm,
-  paymentLabels,
-  type CheckoutForm,
-  type SubmitState,
-} from "@/lib/checkout/form";
+import { paymentLabels, type CheckoutForm, type SubmitState } from "@/lib/checkout/form";
 import { formatCurrency, formatOptionPrice } from "@/lib/format/currency";
-import {
-  getStoreStatusLabel,
-  type StoreStatusPayload,
-} from "@/data/store-status";
-import { useStoreStatus } from "@/lib/store-status/client";
 
-function subscribeCatalogStore(onStoreChange: () => void) {
-  if (migrateLegacyCatalogStorage()) {
-    queueMicrotask(onStoreChange);
-  }
-
-  window.addEventListener("storage", onStoreChange);
-  window.addEventListener("dna-catalog-updated", onStoreChange);
-
-  return () => {
-    window.removeEventListener("storage", onStoreChange);
-    window.removeEventListener("dna-catalog-updated", onStoreChange);
-  };
-}
-
-function getCatalogServerSnapshot() {
-  return "";
-}
-
-export function MenuCatalog({
-  initialStoreStatus,
-}: {
-  initialStoreStatus?: StoreStatusPayload;
-}) {
-  const storeState = useStoreStatus({
-    initialStatus: initialStoreStatus,
-    poll: true,
-  });
-  const catalogSnapshot = useSyncExternalStore(
-    subscribeCatalogStore,
-    getCatalogStorageSnapshot,
-    getCatalogServerSnapshot,
-  );
-  const catalog = useMemo(
-    () => parseCatalogStorageSnapshot(catalogSnapshot),
-    [catalogSnapshot],
-  );
+export function MenuCatalog() {
+  const { categories, products, isStoreOpen, storeStatusLabel } = useStore();
+  const {
+    cartItems,
+    totalItems,
+    totalPrice,
+    getProductQuantity,
+    incrementCartItem,
+    decrementCartItem,
+    isCartDrawerOpen,
+    openCartDrawer,
+    closeCartDrawer,
+  } = useCart();
+  const {
+    customizingProduct,
+    isCombo,
+    selections,
+    comboStepIndex,
+    customizableComboCups,
+    activeComboCup,
+    activeComplementGroups,
+    pureComboCups,
+    customizedPrice,
+    isCustomizationValid,
+    customizationError,
+    addProduct: addSimpleProduct,
+    openCustomizer,
+    confirmCustomization,
+    goToPreviousComboCup,
+    resetCurrentCustomization,
+    closeCustomizer,
+    toggleOption,
+    incrementOptionQuantity,
+    decrementOptionQuantity,
+  } = useCustomizer();
+  const {
+    checkout,
+    canCheckout,
+    orderTotal,
+    submitState,
+    submitMessage,
+    updateCheckoutField,
+    submitOrder,
+  } = useCheckout();
   const [activeCategory, setActiveCategory] = useState("todos");
-  const [cart, setCart] = useState<Cart>({});
-  const [customizingProduct, setCustomizingProduct] = useState<Product | null>(null);
-  const [selections, setSelections] = useState<SelectionState>(() =>
-    getDefaultSelections(initialCatalog.complementGroups),
-  );
-  const [comboStepIndex, setComboStepIndex] = useState(0);
-  const [comboSelections, setComboSelections] = useState<SelectionState[]>([]);
-  const [customizationError, setCustomizationError] = useState("");
-  const [checkout, setCheckout] = useState<CheckoutForm>(initialCheckoutForm);
-  const [submitState, setSubmitState] = useState<SubmitState>("idle");
-  const [submitMessage, setSubmitMessage] = useState("");
-  const [isCartDrawerOpen, setIsCartDrawerOpen] = useState(false);
 
-  const { categories, complementGroups } = catalog;
-  const products = useMemo(
-    () => catalog.products.filter((product) => product.active !== false),
-    [catalog.products],
-  );
-  const cartItems = Object.values(cart);
-  const customizableComboCups = useMemo(
-    () => getCustomizableComboCups(customizingProduct),
-    [customizingProduct],
-  );
-  const activeComboCup = customizableComboCups[comboStepIndex];
-  const activeComplementGroups = useMemo(
-    () =>
-      getComplementGroupsForLimit(
-        activeComboCup?.complementLimit ?? customizingProduct?.complementLimit,
-        complementGroups,
-      ),
-    [activeComboCup?.complementLimit, complementGroups, customizingProduct],
-  );
-  const pureComboCups = useMemo(
-    () => getPureComboCups(customizingProduct),
-    [customizingProduct],
-  );
-  const activeComboSelections = useMemo(() => {
-    if (!customizingProduct || !isComboProduct(customizingProduct)) {
-      return comboSelections;
-    }
-
-    const nextSelections = [...comboSelections];
-    nextSelections[comboStepIndex] = selections;
-
-    return nextSelections;
-  }, [comboSelections, comboStepIndex, customizingProduct, selections]);
-
-  const visibleProducts = useMemo(() => {
-    if (activeCategory === "todos") {
-      return products;
-    }
-
-    return products.filter((product) => product.categoryId === activeCategory);
-  }, [activeCategory, products]);
-
-  const totalItems = cartItems.reduce((total, item) => total + item.quantity, 0);
-  const totalPrice = cartItems.reduce(
-    (total, item) => total + item.unitPrice * item.quantity,
-    0,
-  );
-  const orderTotal = totalPrice;
-  const isStoreOpen = storeState.status === "open";
-  const storeStatusLabel = getStoreStatusLabel(storeState.status);
-  const canCheckout =
-    totalItems > 0 &&
-    checkout.customerName.trim().length > 0 &&
-    checkout.customerPhone.trim().length > 0 &&
-    (checkout.deliveryMethod === "pickup" || checkout.address.trim().length > 0);
-
-  const customizedPrice = customizingProduct
-    ? isComboProduct(customizingProduct)
-      ? calculateComboCustomizedPrice(
-          customizingProduct,
-          activeComboSelections,
-          complementGroups,
-        )
-      : calculateCustomizedPrice(customizingProduct, selections, activeComplementGroups)
-    : 0;
-
-  const isCustomizationValid = activeComplementGroups.every((group) => {
-    if (!group.required) {
-      return true;
-    }
-
-    return (selections[group.id] ?? []).length >= (group.minSelections ?? 1);
-  });
-
-  useEffect(() => {
-    if (!isCartDrawerOpen) {
-      return;
-    }
-
-    const originalOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    return () => {
-      document.body.style.overflow = originalOverflow;
-    };
-  }, [isCartDrawerOpen]);
-
-  useEffect(() => {
-    if (!isCartDrawerOpen) {
-      return;
-    }
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setIsCartDrawerOpen(false);
-      }
-    }
-
-    window.addEventListener("keydown", handleKeyDown);
-
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isCartDrawerOpen]);
-
-  useEffect(() => {
-    const desktopQuery = window.matchMedia("(min-width: 1024px)");
-
-    function handleBreakpointChange(event: MediaQueryListEvent) {
-      if (event.matches) {
-        setIsCartDrawerOpen(false);
-      }
-    }
-
-    desktopQuery.addEventListener("change", handleBreakpointChange);
-
-    return () => desktopQuery.removeEventListener("change", handleBreakpointChange);
-  }, []);
-
-  function getProductQuantity(productId: string) {
-    return cartItems
-      .filter((item) => item.productId === productId)
-      .reduce((total, item) => total + item.quantity, 0);
-  }
-
-  function openCustomizer(product: Product) {
-    const comboCups = getCustomizableComboCups(product);
-    const firstComboCup = comboCups[0];
-    const productComplementGroups = firstComboCup
-      ? getComplementGroupsForLimit(firstComboCup.complementLimit, complementGroups)
-      : getComplementGroupsForProduct(product, complementGroups);
-
-    setCustomizingProduct(product);
-    setComboStepIndex(0);
-    setComboSelections(comboCups.map(() => getDefaultSelections(complementGroups)));
-    setCustomizationError("");
-    setSelections(getDefaultSelections(productComplementGroups));
-  }
-
-  function addSimpleProduct(product: Product) {
-    if (product.customizable) {
-      openCustomizer(product);
-      return;
-    }
-
-    setCart((currentCart) => {
-      const currentItem = currentCart[product.id];
-
-      return {
-        ...currentCart,
-        [product.id]: {
-          id: product.id,
-          productId: product.id,
-          name: product.name,
-          image: product.image,
-          imagePosition: product.imagePosition,
-          quantity: (currentItem?.quantity ?? 0) + 1,
-          unitPrice: product.price,
-        },
-      };
-    });
-  }
-
-  function confirmCustomization() {
-    if (!customizingProduct || !isCustomizationValid) {
-      return;
-    }
-
-    if (isComboProduct(customizingProduct)) {
-      const nextComboSelections = [...comboSelections];
-      nextComboSelections[comboStepIndex] = selections;
-
-      if (comboStepIndex < customizableComboCups.length - 1) {
-        const nextStepIndex = comboStepIndex + 1;
-        const nextCup = customizableComboCups[nextStepIndex];
-
-        setComboSelections(nextComboSelections);
-        setComboStepIndex(nextStepIndex);
-        setSelections(
-          nextComboSelections[nextStepIndex] ??
-            getDefaultSelections(
-              getComplementGroupsForLimit(nextCup?.complementLimit, complementGroups),
-            ),
-        );
-        setCustomizationError("");
-        return;
-      }
-
-      const itemId = buildComboCustomizedItemId(
-        customizingProduct.id,
-        customizableComboCups,
-        nextComboSelections,
-      );
-      const customization = buildComboCustomizationLines(
-        customizingProduct,
-        nextComboSelections,
-        complementGroups,
-      );
-      const unitPrice = calculateComboCustomizedPrice(
-        customizingProduct,
-        nextComboSelections,
-        complementGroups,
-      );
-
-      setCart((currentCart) => {
-        const currentItem = currentCart[itemId];
-
-        return {
-          ...currentCart,
-          [itemId]: {
-            id: itemId,
-            productId: customizingProduct.id,
-            name: customizingProduct.name,
-            image: customizingProduct.image,
-            imagePosition: customizingProduct.imagePosition,
-            quantity: (currentItem?.quantity ?? 0) + 1,
-            unitPrice,
-            customization,
-          },
-        };
-      });
-
-      setCustomizingProduct(null);
-      setComboSelections([]);
-      setComboStepIndex(0);
-      setCustomizationError("");
-      return;
-    }
-
-    const itemId = buildCustomizedItemId(
-      customizingProduct.id,
-      selections,
-      activeComplementGroups,
-    );
-    const unitPrice = calculateCustomizedPrice(
-      customizingProduct,
-      selections,
-      activeComplementGroups,
-    );
-    const customization = buildCustomizationLines(selections, activeComplementGroups);
-
-    setCart((currentCart) => {
-      const currentItem = currentCart[itemId];
-
-      return {
-        ...currentCart,
-        [itemId]: {
-          id: itemId,
-          productId: customizingProduct.id,
-          name: customizingProduct.name,
-          image: customizingProduct.image,
-          imagePosition: customizingProduct.imagePosition,
-          quantity: (currentItem?.quantity ?? 0) + 1,
-          unitPrice,
-          customization,
-        },
-      };
-    });
-
-    setCustomizingProduct(null);
-    setCustomizationError("");
-  }
-
-  function goToPreviousComboCup() {
-    if (!customizingProduct || comboStepIndex === 0) {
-      return;
-    }
-
-    const previousStepIndex = comboStepIndex - 1;
-    const nextComboSelections = [...comboSelections];
-    nextComboSelections[comboStepIndex] = selections;
-
-    setComboSelections(nextComboSelections);
-    setComboStepIndex(previousStepIndex);
-    setSelections(
-      nextComboSelections[previousStepIndex] ??
-        getDefaultSelections(
-          getComplementGroupsForLimit(
-            customizableComboCups[previousStepIndex]?.complementLimit,
-            complementGroups,
-          ),
-        ),
-    );
-    setCustomizationError("");
-  }
-
-  function resetCurrentCustomization() {
-    const currentComplementGroups = isComboProduct(customizingProduct)
-      ? getComplementGroupsForLimit(activeComboCup?.complementLimit, complementGroups)
-      : activeComplementGroups;
-
-    setSelections(getDefaultSelections(currentComplementGroups));
-    setCustomizationError("");
-  }
-
-  function closeCustomizer() {
-    setCustomizingProduct(null);
-    setComboSelections([]);
-    setComboStepIndex(0);
-    setCustomizationError("");
-  }
-
-  function buildOrderPayload(): CreateOrderPayload {
-    return {
-      customerName: checkout.customerName,
-      customerPhone: checkout.customerPhone,
-      deliveryMethod: checkout.deliveryMethod,
-      address: checkout.address,
-      neighborhood: checkout.neighborhood,
-      paymentMethod: checkout.paymentMethod,
-      paymentLabel: paymentLabels[checkout.paymentMethod],
-      changeFor: checkout.changeFor,
-      notes: checkout.notes,
-      items: cartItems.map((item) => ({
-        id: item.id,
-        productId: item.productId,
-        name: item.name,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        totalPrice: item.unitPrice * item.quantity,
-        customization: item.customization ?? [],
-      })),
-      subtotal: totalPrice,
-      deliveryFee: null,
-      total: orderTotal,
-    };
-  }
-
-  async function submitOrder() {
-    if (!isStoreOpen) {
-      setSubmitState("error");
-      setSubmitMessage("No momento estamos fechados. Volte em breve 💜");
-      return;
-    }
-
-    if (!canCheckout || submitState === "submitting") {
-      return;
-    }
-
-    setSubmitState("submitting");
-    setSubmitMessage("");
-
-    try {
-      const response = await fetch("/api/orders", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(buildOrderPayload()),
-      });
-      const responseBody = (await response.json()) as { error?: string };
-
-      if (!response.ok) {
-        throw new Error(responseBody.error ?? "Não foi possível enviar o pedido.");
-      }
-
-      setCart({});
-      setCheckout(initialCheckoutForm);
-      setSubmitState("success");
-      setSubmitMessage(
-        "Pedido enviado com sucesso! Em breve entraremos em contato pelo WhatsApp.",
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "";
-
-      setSubmitState("error");
-      setSubmitMessage(
-        message.includes("Banco de dados não configurado")
-          ? "Não foi possível enviar o pedido porque o banco de dados ainda não foi configurado."
-          : message || "Não foi possível enviar o pedido. Tente novamente.",
-      );
-    }
-  }
-
-  function incrementCartItem(itemId: string) {
-    setCart((currentCart) => {
-      const currentItem = currentCart[itemId];
-
-      if (!currentItem) {
-        return currentCart;
-      }
-
-      return {
-        ...currentCart,
-        [itemId]: {
-          ...currentItem,
-          quantity: currentItem.quantity + 1,
-        },
-      };
-    });
-  }
-
-  function decrementCartItem(itemId: string) {
-    setCart((currentCart) => {
-      const currentItem = currentCart[itemId];
-
-      if (!currentItem) {
-        return currentCart;
-      }
-
-      if (currentItem.quantity <= 1) {
-        const nextCart = { ...currentCart };
-        delete nextCart[itemId];
-        return nextCart;
-      }
-
-      return {
-        ...currentCart,
-        [itemId]: {
-          ...currentItem,
-          quantity: currentItem.quantity - 1,
-        },
-      };
-    });
-  }
+  const visibleProducts =
+    activeCategory === "todos"
+      ? products
+      : products.filter((product) => product.categoryId === activeCategory);
 
   function decrementSimpleProduct(productId: string) {
     decrementCartItem(productId);
-  }
-
-  function toggleOption(group: ComplementGroup, optionId: string) {
-    setSelections((currentSelections) => {
-      const selectedIds = currentSelections[group.id] ?? [];
-
-      if (group.type === "single") {
-        return {
-          ...currentSelections,
-          [group.id]: [optionId],
-        };
-      }
-
-      const isSelected = selectedIds.includes(optionId);
-
-      if (isSelected) {
-        setCustomizationError("");
-        return {
-          ...currentSelections,
-          [group.id]: selectedIds.filter((selectedId) => selectedId !== optionId),
-        };
-      }
-
-      if (
-        group.maxSelections !== undefined &&
-        selectedIds.length >= group.maxSelections
-      ) {
-        setCustomizationError(
-          `Escolha no máximo ${group.maxSelections} complementos por copo.`,
-        );
-        return currentSelections;
-      }
-
-      setCustomizationError("");
-      return {
-        ...currentSelections,
-        [group.id]: [...selectedIds, optionId],
-      };
-    });
-  }
-
-  function incrementOptionQuantity(group: ComplementGroup, optionId: string) {
-    setSelections((currentSelections) => {
-      const selectedIds = currentSelections[group.id] ?? [];
-      setCustomizationError("");
-
-      return {
-        ...currentSelections,
-        [group.id]: [...selectedIds, optionId],
-      };
-    });
-  }
-
-  function decrementOptionQuantity(group: ComplementGroup, optionId: string) {
-    setSelections((currentSelections) => {
-      const selectedIds = currentSelections[group.id] ?? [];
-      const optionIndex = selectedIds.lastIndexOf(optionId);
-
-      if (optionIndex === -1) {
-        return currentSelections;
-      }
-
-      const nextSelectedIds = [...selectedIds];
-      nextSelectedIds.splice(optionIndex, 1);
-      setCustomizationError("");
-
-      return {
-        ...currentSelections,
-        [group.id]: nextSelectedIds,
-      };
-    });
-  }
-
-  function updateCheckoutField<Key extends keyof CheckoutForm>(
-    field: Key,
-    value: CheckoutForm[Key],
-  ) {
-    setCheckout((currentCheckout) => ({
-      ...currentCheckout,
-      [field]: value,
-    }));
-  }
-
-  function openCartDrawer() {
-    if (window.matchMedia("(min-width: 1024px)").matches) {
-      return;
-    }
-
-    setIsCartDrawerOpen(true);
   }
 
   return (
@@ -733,7 +200,7 @@ export function MenuCatalog({
           role="dialog"
           aria-modal="true"
           aria-label="Carrinho"
-          onClick={() => setIsCartDrawerOpen(false)}
+          onClick={() => closeCartDrawer()}
         >
           <div className="w-full" onClick={(event) => event.stopPropagation()}>
             <OrderSummary
@@ -746,7 +213,7 @@ export function MenuCatalog({
               submitMessage={submitMessage}
               submitState={submitState}
               totalItems={totalItems}
-              onClose={() => setIsCartDrawerOpen(false)}
+              onClose={() => closeCartDrawer()}
               onIncrement={incrementCartItem}
               onDecrement={decrementCartItem}
               onCheckoutChange={updateCheckoutField}
@@ -762,7 +229,7 @@ export function MenuCatalog({
           activeComboCup={activeComboCup}
           currentStep={comboStepIndex}
           errorMessage={customizationError}
-          isCombo={isComboProduct(customizingProduct)}
+          isCombo={isCombo}
           selections={selections}
           complementGroups={activeComplementGroups}
           pureComboCups={pureComboCups}

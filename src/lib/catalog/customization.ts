@@ -5,6 +5,7 @@ import type {
   Product,
 } from "@/data/menu";
 import type { OrderCustomizationLine } from "@/data/orders";
+import type { CartLine } from "@/lib/cart/types";
 import { formatCurrency } from "@/lib/format/currency";
 
 // Regras de personalização de copos e combos. Preço, limites e linhas de
@@ -286,4 +287,53 @@ export function buildComboCustomizationLines(
         groupTitle: `${cup.label} - ${line.groupTitle}`,
       }));
   });
+}
+
+// Linha de carrinho de um copo personalizado (não-combo). É exatamente o que o
+// personalizador sempre adicionou ao carrinho; compartilhado com o builder.
+export function buildCustomizedCupCartLine(
+  product: Product,
+  selections: SelectionState,
+  complementGroups: ComplementGroup[],
+): CartLine {
+  return {
+    id: buildCustomizedItemId(product.id, selections, complementGroups),
+    productId: product.id,
+    name: product.name,
+    image: product.image,
+    imagePosition: product.imagePosition,
+    unitPrice: calculateCustomizedPrice(product, selections, complementGroups),
+    customization: buildCustomizationLines(selections, complementGroups),
+  };
+}
+
+export function buildComboCartLine(
+  product: Product,
+  comboSelections: SelectionState[],
+  complementGroups: ComplementGroup[],
+): CartLine {
+  return {
+    id: buildComboCustomizedItemId(
+      product.id,
+      getCustomizableComboCups(product),
+      comboSelections,
+    ),
+    productId: product.id,
+    name: product.name,
+    image: product.image,
+    imagePosition: product.imagePosition,
+    unitPrice: calculateComboCustomizedPrice(product, comboSelections, complementGroups),
+    customization: buildComboCustomizationLines(product, comboSelections, complementGroups),
+  };
+}
+
+export function buildSimpleCartLine(product: Product): CartLine {
+  return {
+    id: product.id,
+    productId: product.id,
+    name: product.name,
+    image: product.image,
+    imagePosition: product.imagePosition,
+    unitPrice: product.price,
+  };
 }

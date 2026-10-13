@@ -12,3 +12,5 @@ export type CartItem = {
 };
 
 export type Cart = Record<string, CartItem>;
+
+export type CartLine = Omit<CartItem, "quantity">;
