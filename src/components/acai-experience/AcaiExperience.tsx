@@ -131,8 +131,6 @@ export function AcaiExperience() {
         // ---------- Intro ----------
         if (tier === "low") {
           gsap.set(q(".ax-intro"), { autoAlpha: 1 });
-          // Sem montagem animada, as deixas não têm função e cobririam o slogan.
-          gsap.set(q(".ax-cue"), { autoAlpha: 0 });
           gsap.set(q(".ax-line-inner"), { color: "var(--color-dna-cream)" });
           html.classList.remove("dna-intro-pending");
         } else {
@@ -193,8 +191,8 @@ export function AcaiExperience() {
               0.35 * pace,
             );
 
-          // Montagem: cada complemento entra na ordem do cardápio. Quando o
-          // recorte fotográfico existir, ele cai no copo junto com a deixa.
+          // Montagem: cada complemento entra na ordem do cardápio e fica visível.
+          // Quando o recorte fotográfico existir, ele cai dentro do copo.
           cueTargets.forEach((cue, index) => {
             const at = (1 + index * 0.24) * pace;
             const fromLeft = cue.dataset.side === "left";
@@ -204,7 +202,7 @@ export function AcaiExperience() {
               { autoAlpha: 1, x: 0, duration: 0.6 * pace },
               at,
             );
-            const drop = cue.querySelector<HTMLElement>(".ax-drop");
+            const drop = root.querySelector<HTMLElement>(`.ax-drop[data-cue="${cue.dataset.cue}"]`);
             if (drop) {
               intro.fromTo(
                 drop,
@@ -238,12 +236,6 @@ export function AcaiExperience() {
               },
               afterCues + 0.1,
             )
-            // As deixas cumprem o papel na montagem e saem quando o slogan acende.
-            .to(
-              cueTargets,
-              { autoAlpha: 0, duration: 0.6, stagger: 0.04, ease: "power2.in" },
-              afterCues,
-            )
             .fromTo(
               q(".ax-desc, .ax-cta"),
               { autoAlpha: 0, y: 18 },
@@ -265,8 +257,6 @@ export function AcaiExperience() {
           const cupX = gsap.quickTo(q(".ax-cup-par"), "x", { duration: 0.9, ease: "power3.out" });
           const cupY = gsap.quickTo(q(".ax-cup-par"), "y", { duration: 0.9, ease: "power3.out" });
           const cupR = gsap.quickTo(q(".ax-cup-par"), "rotation", { duration: 1.2, ease: "power3.out" });
-          const cuesX = gsap.quickTo(q(".ax-cues-par"), "x", { duration: 1.1, ease: "power3.out" });
-          const cuesY = gsap.quickTo(q(".ax-cues-par"), "y", { duration: 1.1, ease: "power3.out" });
           const bloomX = gsap.quickTo(q(".ax-bloom-par"), "x", { duration: 1.6, ease: "power2.out" });
           const bloomY = gsap.quickTo(q(".ax-bloom-par"), "y", { duration: 1.6, ease: "power2.out" });
 
@@ -277,8 +267,6 @@ export function AcaiExperience() {
             cupX(nx * 18);
             cupY(ny * 12);
             cupR(nx * 1.6);
-            cuesX(nx * -34);
-            cuesY(ny * -20);
             bloomX(nx * 60);
             bloomY(ny * 40);
           };
@@ -325,7 +313,7 @@ export function AcaiExperience() {
           } else {
             scroll.to(
               q(".ax-cup-move"),
-              { y: () => -window.innerHeight * 0.17, scale: 0.74, duration: 0.35 },
+              { y: () => -window.innerHeight * 0.06, scale: 0.62, duration: 0.35 },
               0.3,
             );
           }
@@ -368,9 +356,6 @@ export function AcaiExperience() {
     };
   }, []);
 
-  const leftCues = ingredientCues.filter((_, index) => index % 2 === 0);
-  const rightCues = ingredientCues.filter((_, index) => index % 2 === 1);
-
   return (
     <section
       ref={rootRef}
@@ -382,100 +367,122 @@ export function AcaiExperience() {
         <div className="ax-stage absolute inset-0">
           {/* Luz */}
           <div className="ax-bloom-par absolute inset-0" aria-hidden="true">
-            <div className="ax-bloom ax-intro absolute left-1/2 top-[48%] size-[min(120vw,1100px)] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgb(109_42_122/0.75)_0%,rgb(75_22_76/0.45)_32%,transparent_68%)]" />
+            <div className="ax-bloom ax-intro absolute left-1/2 top-[38%] size-[min(120vw,1100px)] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgb(109_42_122/0.75)_0%,rgb(75_22_76/0.45)_32%,transparent_68%)]" />
           </div>
           <div
             className="ax-rim ax-intro absolute inset-x-0 bottom-0 h-[45%] bg-[radial-gradient(60%_80%_at_50%_100%,rgb(47_125_79/0.28)_0%,transparent_70%)]"
             aria-hidden="true"
           />
 
-          {/* Slogan — visível desde o primeiro paint (LCP), "acende" na intro */}
-          <h1 id="hero-title" className="contents">
-            <span className="ax-s-brand absolute inset-x-0 top-[calc(4.5rem+3svh)] z-20 flex justify-center overflow-hidden lg:top-[calc(5rem+4svh)]">
-              <span className="ax-brand ax-intro block text-sm font-semibold tracking-[0.02em] text-dna-orchid sm:text-base">
-                DNA do Açaí
+          {/*
+            Composição em coluna. Ordem visual (flex `order`): marca → copo →
+            frase → complementos → CTAs. Ordem no DOM: h1 primeiro, para a frase
+            ser lida antes de tudo. O copo ocupa o espaço que sobrar e só a base
+            esfumaçada dele encosta no topo da frase (que fica atrás).
+          */}
+          <div className="ax-layout relative flex h-full flex-col items-center pb-[max(1rem,env(safe-area-inset-bottom))] pt-[calc(4rem+2svh)] lg:pb-8 lg:pt-[calc(5rem+2svh)]">
+            {/* Slogan — visível desde o primeiro paint, "acende" na intro */}
+            <h1 id="hero-title" className="contents">
+              <span className="ax-s-brand order-1 flex shrink-0 justify-center overflow-hidden">
+                <span className="ax-brand ax-intro block text-sm font-semibold tracking-[0.02em] text-dna-orchid sm:text-base">
+                  DNA do Açaí
+                </span>
               </span>
-            </span>
-            <span className="ax-s-line-a absolute inset-x-0 top-[calc(6.5rem+5svh)] z-0 block text-center lg:top-[calc(7rem+6svh)]">
-              <span className="ax-line-inner dna-display block text-[clamp(3rem,14vw,5.5rem)] lg:text-[clamp(5rem,11.5vw,12.5rem)] uppercase">
-                Açaí de verdade,
+              <span className="ax-s-line-a relative z-0 order-3 -mt-[6svh] block w-full shrink-0 text-center lg:-mt-[9svh]">
+                <span className="ax-line-inner dna-display block text-[clamp(2.5rem,13vw,5rem)] uppercase lg:text-[min(8.2vw,12.5svh)]">
+                  Açaí de verdade,
+                </span>
               </span>
-            </span>
-            <span className="ax-s-line-b absolute inset-x-0 bottom-[calc(10.5rem+6svh)] z-30 block text-center lg:bottom-[calc(6rem+9svh)]">
-              <span className="ax-line-inner dna-display block text-[clamp(3rem,14vw,5.5rem)] lg:text-[clamp(5rem,11.5vw,12.5rem)] uppercase [text-shadow:0_20px_60px_rgb(26_10_31/0.6)]">
-                do seu jeito.
+              <span className="ax-s-line-b relative z-0 order-4 block w-full shrink-0 text-center">
+                <span className="ax-line-inner dna-display block text-[clamp(2.5rem,13vw,5rem)] uppercase [text-shadow:0_20px_60px_rgb(26_10_31/0.6)] lg:text-[min(8.2vw,12.5svh)]">
+                  do seu jeito.
+                </span>
               </span>
-            </span>
-          </h1>
+            </h1>
 
-          {/* Copo */}
-          <div className="ax-cup-move absolute left-1/2 top-[47%] z-10 h-[min(50svh,560px)] -translate-x-1/2 -translate-y-1/2 lg:top-1/2 lg:h-[min(76svh,880px)]">
-            <div className="ax-cup-par relative h-full">
-              <div className="ax-cup-float relative h-full">
-                <div className="ax-cup relative aspect-[9/16] h-full">
-                  <div className="ax-cup-mask absolute inset-0">
-                    <picture>
-                      <source
-                        type="image/avif"
-                        srcSet={`${heroAssets.poster.avifSmall} 480w, ${heroAssets.poster.avif} 720w`}
-                        sizes="(min-width: 1024px) 495px, 290px"
+            {/* Copo */}
+            <div className="relative z-10 order-2 mt-[1svh] w-full min-h-0 flex-1">
+              <div className="ax-cup-move relative mx-auto h-full w-fit">
+                <div className="ax-cup-par relative h-full">
+                  <div className="ax-cup-float relative h-full">
+                    <div className="ax-cup relative aspect-[9/16] h-full">
+                      <div className="ax-cup-mask absolute inset-0">
+                        <picture>
+                          <source
+                            type="image/avif"
+                            srcSet={`${heroAssets.poster.avifSmall} 480w, ${heroAssets.poster.avif} 720w`}
+                            sizes="(min-width: 1024px) 380px, 260px"
+                          />
+                          <source
+                            type="image/webp"
+                            srcSet={`${heroAssets.poster.webpSmall} 480w, ${heroAssets.poster.webp} 720w`}
+                            sizes="(min-width: 1024px) 380px, 260px"
+                          />
+                          <img
+                            src={heroAssets.poster.webp}
+                            width={heroAssets.poster.width}
+                            height={heroAssets.poster.height}
+                            alt="Copo de açaí DNA do Açaí com leite condensado e morango"
+                            fetchPriority="high"
+                            decoding="async"
+                            className="absolute inset-0 size-full object-cover"
+                          />
+                        </picture>
+                        <video
+                          ref={videoRef}
+                          muted
+                          loop
+                          playsInline
+                          preload="none"
+                          aria-hidden="true"
+                          tabIndex={-1}
+                          className="absolute inset-0 size-full object-cover opacity-0"
+                        />
+                      </div>
+                      <canvas
+                        ref={canvasRef}
+                        aria-hidden="true"
+                        className="pointer-events-none absolute left-[-25%] top-[-20%] h-[120%] w-[150%] max-w-none"
                       />
-                      <source
-                        type="image/webp"
-                        srcSet={`${heroAssets.poster.webpSmall} 480w, ${heroAssets.poster.webp} 720w`}
-                        sizes="(min-width: 1024px) 495px, 290px"
-                      />
-                      <img
-                        src={heroAssets.poster.webp}
-                        width={heroAssets.poster.width}
-                        height={heroAssets.poster.height}
-                        alt="Copo de açaí DNA do Açaí com leite condensado e morango"
-                        fetchPriority="high"
-                        decoding="async"
-                        className="absolute inset-0 size-full object-cover"
-                      />
-                    </picture>
-                    <video
-                      ref={videoRef}
-                      muted
-                      loop
-                      playsInline
-                      preload="none"
-                      aria-hidden="true"
-                      tabIndex={-1}
-                      className="absolute inset-0 size-full object-cover opacity-0"
-                    />
-                  </div>
-                  <canvas
-                    ref={canvasRef}
-                    aria-hidden="true"
-                    className="pointer-events-none absolute left-[-25%] top-[-20%] h-[120%] w-[150%]"
-                  />
-
-                  {/* Montagem: complementos reais do cardápio */}
-                  <div className="ax-cues-par pointer-events-none absolute inset-0" aria-hidden="true">
-                    <CueColumn cues={leftCues} side="left" />
-                    <CueColumn cues={rightCues} side="right" />
+                      {/* Recortes fotográficos dos complementos caem dentro do copo */}
+                      <div className="pointer-events-none absolute inset-x-0 top-[8%]" aria-hidden="true">
+                        {ingredientCues
+                          .filter((cue) => cue.asset)
+                          .map((cue) => (
+                            // eslint-disable-next-line @next/next/no-img-element -- recorte fotográfico do manifesto
+                            <img
+                              key={cue.id}
+                              data-cue={cue.id}
+                              src={cue.asset!.src}
+                              width={cue.asset!.width}
+                              height={cue.asset!.height}
+                              alt=""
+                              className="ax-drop absolute left-1/2 top-0 w-1/3 -translate-x-1/2"
+                            />
+                          ))}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          {/* Descrição e CTAs */}
-          <div className="ax-s-copy absolute inset-x-0 bottom-0 z-40 pb-[max(1.25rem,env(safe-area-inset-bottom))] lg:pb-10">
-            <div className="dna-shell flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-              <p className="ax-desc ax-intro dna-lede text-center text-dna-cream/80 max-lg:mx-auto max-lg:text-[0.95rem] lg:text-left">
-                Monte sua combinação favorita e transforme cada copo em uma
-                experiência única.
-              </p>
-              <div className="ax-cta ax-intro grid grid-cols-2 gap-3 sm:flex sm:justify-center">
-                <a href="#monte" className="dna-btn dna-btn-primary">
-                  Monte o seu
-                </a>
-                <a href="#cardapio" className="dna-btn dna-btn-ghost">
-                  Ver cardápio
-                </a>
+            {/* Complementos, descrição e CTAs — abaixo da frase */}
+            <div className="ax-s-copy relative z-20 order-5 mt-[2.5svh] w-full shrink-0">
+              <div className="dna-shell grid items-end gap-5 xl:grid-cols-[1fr_auto_1fr] xl:gap-10">
+                <CueBoard />
+                <p className="ax-desc ax-intro dna-lede text-center text-dna-cream/80 max-lg:mx-auto max-lg:text-[0.95rem] lg:mx-auto xl:order-first xl:mx-0 xl:text-left [@media(max-height:820px)]:hidden">
+                  Monte sua combinação favorita e transforme cada copo em uma
+                  experiência única.
+                </p>
+                <div className="ax-cta ax-intro grid grid-cols-2 gap-3 sm:flex sm:justify-center xl:justify-end">
+                  <a href="#monte" className="dna-btn dna-btn-primary">
+                    Monte o seu
+                  </a>
+                  <a href="#cardapio" className="dna-btn dna-btn-ghost">
+                    Ver cardápio
+                  </a>
+                </div>
               </div>
             </div>
           </div>
@@ -529,6 +536,27 @@ export function AcaiExperience() {
   );
 }
 
+// Complementos da montagem em duas colunas, abaixo da frase. Traços curtos
+// ligam cada nome a um eixo central que aponta para o copo — o eixo termina
+// na linha divisória e nunca atravessa a frase.
+function CueBoard() {
+  const left = ingredientCues.filter((_, index) => index % 2 === 0);
+  const right = ingredientCues.filter((_, index) => index % 2 === 1);
+
+  return (
+    <div
+      aria-label="Complementos da montagem"
+      className="ax-cues-par mx-auto w-full max-w-[22rem] border-t border-dna-cream/15 pt-3 lg:max-w-[34rem] lg:pt-4"
+    >
+      <div className="grid grid-cols-[1fr_auto_1fr] items-stretch">
+        <CueColumn cues={left} side="left" />
+        <span aria-hidden="true" className="w-px bg-gradient-to-b from-dna-cream/45 to-dna-cream/10" />
+        <CueColumn cues={right} side="right" />
+      </div>
+    </div>
+  );
+}
+
 function CueColumn({
   cues,
   side,
@@ -537,47 +565,28 @@ function CueColumn({
   side: "left" | "right";
 }) {
   return (
-    <ul
-      className={`ax-s-cue-${side} absolute top-[16%] flex h-[62%] flex-col justify-between ${
-        side === "left"
-          ? "right-[calc(100%-0.5rem)] items-end text-right"
-          : "left-[calc(100%-0.5rem)] items-start text-left"
-      }`}
-    >
+    <ul className={`ax-s-cue-${side} grid gap-1.5 lg:gap-2`}>
       {cues.map((cue) => (
         <li
           key={cue.id}
-          className="ax-cue ax-intro relative flex items-center gap-2"
+          className={`ax-cue ax-intro flex items-center gap-2 ${
+            side === "left" ? "flex-row justify-end text-right" : "flex-row-reverse justify-end text-left"
+          }`}
           data-side={side}
+          data-cue={cue.id}
           data-order={ingredientCues.indexOf(cue)}
           data-particles={cue.particles ? "true" : undefined}
         >
-          {side === "right" ? <CueTick /> : null}
-          <span className="max-w-[5.5rem] text-[0.7rem] font-semibold leading-tight text-dna-cream/85 sm:max-w-none sm:text-sm lg:text-base">
+          <span className="whitespace-nowrap text-sm font-semibold leading-tight text-dna-cream [text-shadow:0_1px_12px_rgb(26_10_31/0.9)] lg:text-lg">
             {cue.label}
           </span>
-          {side === "left" ? <CueTick /> : null}
-          {cue.asset ? (
-            // eslint-disable-next-line @next/next/no-img-element -- recorte fotográfico do manifesto
-            <img
-              src={cue.asset.src}
-              width={cue.asset.width}
-              height={cue.asset.height}
-              alt=""
-              className="ax-drop absolute left-1/2 top-0 w-16 -translate-x-1/2"
-            />
-          ) : null}
+          <span aria-hidden="true" className="h-px w-4 shrink-0 bg-dna-cream/55 sm:w-6 lg:w-10" />
+          <span
+            aria-hidden="true"
+            className={`size-1.5 shrink-0 rounded-full bg-dna-sprout ${side === "left" ? "-mr-[3.5px]" : "-ml-[3.5px]"}`}
+          />
         </li>
       ))}
     </ul>
-  );
-}
-
-function CueTick() {
-  return (
-    <span className="flex items-center" aria-hidden="true">
-      <span className="h-px w-5 bg-dna-cream/35 lg:w-10" />
-      <span className="size-1.5 rounded-full bg-dna-sprout" />
-    </span>
   );
 }
