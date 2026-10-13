@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useCart } from "@/components/cart/CartProvider";
 import { useCustomizer } from "@/components/builder/CustomizerProvider";
 import { formatCurrency } from "@/lib/format/currency";
@@ -9,11 +10,16 @@ import { formatCurrency } from "@/lib/format/currency";
 export function CartDock() {
   const { totalItems, totalPrice, isCartDrawerOpen, openCartDrawer } = useCart();
   const { customizingProduct } = useCustomizer();
+  const builderInView = useBuilderInView();
 
   if (totalItems === 0 || isCartDrawerOpen || customizingProduct) return null;
 
+  // No celular o builder tem a própria barra fixa de "Adicionar à sacola";
+  // o dock sai de cena para não cobri-la.
+  const hideOnMobile = builderInView ? "max-lg:hidden" : "";
+
   return (
-    <div className="dna-fade-in fixed inset-x-0 bottom-0 z-50 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:inset-x-auto lg:right-8 lg:bottom-8 lg:p-0">
+    <div className={`dna-fade-in ${hideOnMobile} fixed inset-x-0 bottom-0 z-50 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:inset-x-auto lg:right-8 lg:bottom-8 lg:p-0`}>
       <button
         type="button"
         onClick={openCartDrawer}
@@ -29,4 +35,21 @@ export function CartDock() {
       </button>
     </div>
   );
+}
+
+function useBuilderInView() {
+  const [inView, setInView] = useState(false);
+
+  useEffect(() => {
+    const builder = document.getElementById("monte");
+    if (!builder) return;
+
+    const observer = new IntersectionObserver(([entry]) => setInView(entry.isIntersecting), {
+      rootMargin: "0px 0px -15% 0px",
+    });
+    observer.observe(builder);
+    return () => observer.disconnect();
+  }, []);
+
+  return inView;
 }

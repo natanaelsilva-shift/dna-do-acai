@@ -262,6 +262,7 @@ function DetailsStep({ onBack, onClose }: { onBack: () => void; onClose: () => v
         <Field label="Nome">
           <input
             data-autofocus
+            name="name"
             value={checkout.customerName}
             onChange={(event) => updateCheckoutField("customerName", event.target.value)}
             className="dna-field"
@@ -277,6 +278,7 @@ function DetailsStep({ onBack, onClose }: { onBack: () => void; onClose: () => v
             className="dna-field"
             placeholder="(00) 00000-0000"
             type="tel"
+            name="tel"
             inputMode="tel"
             autoComplete="tel"
           />
@@ -310,6 +312,7 @@ function DetailsStep({ onBack, onClose }: { onBack: () => void; onClose: () => v
                 className="dna-field"
                 placeholder="Rua, número e complemento"
                 autoComplete="street-address"
+                name="address"
               />
             </Field>
             <Field label="Bairro">
@@ -318,6 +321,8 @@ function DetailsStep({ onBack, onClose }: { onBack: () => void; onClose: () => v
                 onChange={(event) => updateCheckoutField("neighborhood", event.target.value)}
                 className="dna-field"
                 placeholder="Seu bairro"
+                name="neighborhood"
+                autoComplete="address-level3"
               />
             </Field>
           </>
@@ -357,6 +362,8 @@ function DetailsStep({ onBack, onClose }: { onBack: () => void; onClose: () => v
               onChange={(event) => updateCheckoutField("changeFor", event.target.value)}
               className="dna-field"
               placeholder="Troco para quanto?"
+              name="change-for"
+              autoComplete="off"
               inputMode="decimal"
             />
           </Field>
@@ -368,6 +375,8 @@ function DetailsStep({ onBack, onClose }: { onBack: () => void; onClose: () => v
             onChange={(event) => updateCheckoutField("notes", event.target.value)}
             className="dna-field min-h-24 resize-none py-3"
             placeholder="Ex.: sem granola, retirar no balcão às 18h"
+            name="notes"
+            autoComplete="off"
           />
         </Field>
       </form>
@@ -398,7 +407,7 @@ function DetailsStep({ onBack, onClose }: { onBack: () => void; onClose: () => v
           className="dna-btn dna-btn-primary mt-4 w-full"
         >
           {submitState === "submitting"
-            ? "Enviando pedido..."
+            ? "Enviando pedido…"
             : !isStoreOpen
               ? "Loja fechada"
               : canCheckout

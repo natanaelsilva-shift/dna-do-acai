@@ -42,6 +42,12 @@ export function SiteHeader() {
         scrolled || menuOpen ? "dna-glass border-x-0 border-t-0" : "border-b border-transparent"
       }`}
     >
+      <a
+        href="#cardapio"
+        className="dna-btn dna-btn-cream sr-only z-[80] focus:not-sr-only focus:fixed focus:left-4 focus:top-3"
+      >
+        Pular para o cardápio
+      </a>
       <div className="dna-shell flex h-16 items-center justify-between gap-4 lg:h-20">
         <a href="#inicio" className="flex shrink-0 items-center gap-3" aria-label="DNA do Açaí, início">
           <Image

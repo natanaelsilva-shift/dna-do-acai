@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { AdminDashboard } from "@/components/AdminDashboard";
 import type { OrderRecord } from "@/data/orders";
 import { getStoreStatus } from "@/lib/store-status/server";
@@ -8,6 +8,11 @@ export const metadata: Metadata = {
   title: "Pedidos | Admin | DNA do Açaí",
   description: "Painel de pedidos em tempo real da loja DNA do Açaí.",
   manifest: "/admin-manifest.json",
+};
+
+// Mantém a cor de barra do navegador que o painel já usava.
+export const viewport: Viewport = {
+  themeColor: "#071b12",
 };
 
 export const dynamic = "force-dynamic";

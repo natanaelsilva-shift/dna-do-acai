@@ -134,11 +134,17 @@ select {
 
 @layer components {
   .dna-store {
+    color-scheme: dark;
     background: var(--color-dna-night);
     color: var(--color-dna-cream);
     font-family: var(--font-body);
     font-optical-sizing: auto;
     -webkit-font-smoothing: antialiased;
+  }
+
+  /* Âncoras não ficam escondidas sob o header fixo. */
+  .dna-store [id] {
+    scroll-margin-top: 5.5rem;
   }
 
   .dna-store :focus-visible {
@@ -315,6 +321,7 @@ select {
 
   /* Superfície clara para leitura e formulários (carrinho, checkout). */
   .dna-paper {
+    color-scheme: light;
     background: var(--color-dna-cream);
     color: var(--color-dna-ink);
   }
