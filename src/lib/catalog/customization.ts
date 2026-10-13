@@ -337,3 +337,98 @@ export function buildSimpleCartLine(product: Product): CartLine {
     unitPrice: product.price,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Regras de seleção de complementos (compartilhadas por personalizador e
+// builder). Mesmo comportamento que o personalizador sempre teve.
+// ---------------------------------------------------------------------------
+
+export type SelectionResult = {
+  selections: SelectionState;
+  // null = não altera a mensagem atual (comportamento original).
+  error: string | null;
+};
+
+export function toggleOptionSelection(
+  currentSelections: SelectionState,
+  group: ComplementGroup,
+  optionId: string,
+): SelectionResult {
+  const selectedIds = currentSelections[group.id] ?? [];
+
+  if (group.type === "single") {
+    return {
+      selections: { ...currentSelections, [group.id]: [optionId] },
+      error: null,
+    };
+  }
+
+  if (selectedIds.includes(optionId)) {
+    return {
+      selections: {
+        ...currentSelections,
+        [group.id]: selectedIds.filter((selectedId) => selectedId !== optionId),
+      },
+      error: "",
+    };
+  }
+
+  if (group.maxSelections !== undefined && selectedIds.length >= group.maxSelections) {
+    return {
+      selections: currentSelections,
+      error: `Escolha no máximo ${group.maxSelections} complementos por copo.`,
+    };
+  }
+
+  return {
+    selections: { ...currentSelections, [group.id]: [...selectedIds, optionId] },
+    error: "",
+  };
+}
+
+export function incrementOptionSelection(
+  currentSelections: SelectionState,
+  group: ComplementGroup,
+  optionId: string,
+): SelectionResult {
+  const selectedIds = currentSelections[group.id] ?? [];
+
+  return {
+    selections: { ...currentSelections, [group.id]: [...selectedIds, optionId] },
+    error: "",
+  };
+}
+
+export function decrementOptionSelection(
+  currentSelections: SelectionState,
+  group: ComplementGroup,
+  optionId: string,
+): SelectionResult {
+  const selectedIds = currentSelections[group.id] ?? [];
+  const optionIndex = selectedIds.lastIndexOf(optionId);
+
+  if (optionIndex === -1) {
+    return { selections: currentSelections, error: null };
+  }
+
+  const nextSelectedIds = [...selectedIds];
+  nextSelectedIds.splice(optionIndex, 1);
+
+  return {
+    selections: { ...currentSelections, [group.id]: nextSelectedIds },
+    error: "",
+  };
+}
+
+export function isSelectionValid(
+  selections: SelectionState,
+  complementGroups: ComplementGroup[],
+) {
+  return complementGroups.every((group) => {
+    if (!group.required) {
+      return true;
+    }
+
+    return (selections[group.id] ?? []).length >= (group.minSelections ?? 1);
+  });
+}

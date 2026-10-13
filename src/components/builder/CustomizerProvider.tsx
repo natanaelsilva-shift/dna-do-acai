@@ -10,12 +10,16 @@ import {
   buildSimpleCartLine,
   calculateComboCustomizedPrice,
   calculateCustomizedPrice,
+  decrementOptionSelection,
   getComplementGroupsForLimit,
   getComplementGroupsForProduct,
   getCustomizableComboCups,
   getDefaultSelections,
   getPureComboCups,
+  incrementOptionSelection,
   isComboProduct,
+  isSelectionValid,
+  toggleOptionSelection,
   type SelectionState,
 } from "@/lib/catalog/customization";
 
@@ -93,13 +97,7 @@ export function CustomizerProvider({ children }: { children: ReactNode }) {
       : calculateCustomizedPrice(customizingProduct, selections, activeComplementGroups)
     : 0;
 
-  const isCustomizationValid = activeComplementGroups.every((group) => {
-    if (!group.required) {
-      return true;
-    }
-
-    return (selections[group.id] ?? []).length >= (group.minSelections ?? 1);
-  });
+  const isCustomizationValid = isSelectionValid(selections, activeComplementGroups);
 
   function openCustomizer(product: Product) {
     const comboCups = getCustomizableComboCups(product);
@@ -209,75 +207,32 @@ export function CustomizerProvider({ children }: { children: ReactNode }) {
     setCustomizationError("");
   }
 
-  function toggleOption(group: ComplementGroup, optionId: string) {
+  function applySelectionResult(
+    rule: typeof toggleOptionSelection,
+    group: ComplementGroup,
+    optionId: string,
+  ) {
     setSelections((currentSelections) => {
-      const selectedIds = currentSelections[group.id] ?? [];
+      const result = rule(currentSelections, group, optionId);
 
-      if (group.type === "single") {
-        return {
-          ...currentSelections,
-          [group.id]: [optionId],
-        };
+      if (result.error !== null) {
+        setCustomizationError(result.error);
       }
 
-      const isSelected = selectedIds.includes(optionId);
-
-      if (isSelected) {
-        setCustomizationError("");
-        return {
-          ...currentSelections,
-          [group.id]: selectedIds.filter((selectedId) => selectedId !== optionId),
-        };
-      }
-
-      if (
-        group.maxSelections !== undefined &&
-        selectedIds.length >= group.maxSelections
-      ) {
-        setCustomizationError(
-          `Escolha no máximo ${group.maxSelections} complementos por copo.`,
-        );
-        return currentSelections;
-      }
-
-      setCustomizationError("");
-      return {
-        ...currentSelections,
-        [group.id]: [...selectedIds, optionId],
-      };
+      return result.selections;
     });
+  }
+
+  function toggleOption(group: ComplementGroup, optionId: string) {
+    applySelectionResult(toggleOptionSelection, group, optionId);
   }
 
   function incrementOptionQuantity(group: ComplementGroup, optionId: string) {
-    setSelections((currentSelections) => {
-      const selectedIds = currentSelections[group.id] ?? [];
-      setCustomizationError("");
-
-      return {
-        ...currentSelections,
-        [group.id]: [...selectedIds, optionId],
-      };
-    });
+    applySelectionResult(incrementOptionSelection, group, optionId);
   }
 
   function decrementOptionQuantity(group: ComplementGroup, optionId: string) {
-    setSelections((currentSelections) => {
-      const selectedIds = currentSelections[group.id] ?? [];
-      const optionIndex = selectedIds.lastIndexOf(optionId);
-
-      if (optionIndex === -1) {
-        return currentSelections;
-      }
-
-      const nextSelectedIds = [...selectedIds];
-      nextSelectedIds.splice(optionIndex, 1);
-      setCustomizationError("");
-
-      return {
-        ...currentSelections,
-        [group.id]: nextSelectedIds,
-      };
-    });
+    applySelectionResult(decrementOptionSelection, group, optionId);
   }
 
   const value: CustomizerContextValue = {
