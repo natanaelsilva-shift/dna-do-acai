@@ -1,6 +1,13 @@
 import type { Metadata, Viewport } from "next";
 import { Bricolage_Grotesque } from "next/font/google";
 import "./globals.css";
+import { PromotionProvider } from "@/components/store/PromotionProvider";
+import { connection } from "next/server";
+
+async function getRequestTime() {
+  await connection();
+  return Date.now();
+}
 
 // Uma família variável com dois papéis: títulos pesados e condensados (wdth)
 // e texto corrido na largura normal. Aplicada só na loja via
@@ -82,14 +89,15 @@ export const viewport: Viewport = {
   themeColor: "#1a0a1f",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const initialNow = await getRequestTime();
   return (
     <html lang="pt-BR" className={bricolage.variable} suppressHydrationWarning>
-      <body>{children}</body>
+      <body><PromotionProvider initialNow={initialNow}>{children}</PromotionProvider></body>
     </html>
   );
 }

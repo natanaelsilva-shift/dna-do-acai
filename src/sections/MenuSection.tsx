@@ -4,6 +4,8 @@ import type { Product } from "@/data/menu";
 import { featuredProductIds } from "@/data/product-visuals";
 import { ProductCard } from "@/components/product/ProductCard";
 import { useStore } from "@/components/store/StoreProvider";
+import { usePromotionClock } from "@/components/store/PromotionProvider";
+import { formatPromotionRemaining, isPromotionActive } from "@/lib/catalog/pricing";
 
 // Texto de vitrine por categoria do catálogo. Categorias novas (ex.:
 // batidinhas, quando forem cadastradas) aparecem automaticamente com o nome
@@ -27,7 +29,9 @@ const categoryPresentation: Record<string, { anchor: string; title: string; lede
 };
 
 export function MenuSection() {
-  const { categories, products, isStoreOpen, storeStatusLabel } = useStore();
+  const { categories, products, isStoreOpen, storeStatusLabel, storeUnavailableMessage } = useStore();
+  const { now } = usePromotionClock();
+  const hasPromotion = products.some((product) => isPromotionActive(product, now));
 
   const featured = featuredProductIds
     .map((id) => products.find((product) => product.id === id))
@@ -72,9 +76,16 @@ export function MenuSection() {
           </p>
         </header>
 
+        {hasPromotion ? (
+          <p data-promotion-countdown className="mt-6 w-fit rounded-xl border border-[#c8f542]/30 bg-[#c8f542]/10 px-4 py-3 text-sm text-[#c8f542]">
+            <strong>OFERTA POR TEMPO LIMITADO</strong>
+            <span className="ml-2 inline-block tabular-nums">Promoção termina em: {formatPromotionRemaining(now)}</span>
+          </p>
+        ) : null}
+
         {!isStoreOpen ? (
           <p className="mt-6 rounded-[var(--radius-panel)] bg-dna-acai px-5 py-4 font-semibold">
-            No momento estamos fechados. Volte em breve 💜
+            {storeUnavailableMessage}
           </p>
         ) : null}
       </div>

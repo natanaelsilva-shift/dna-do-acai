@@ -93,7 +93,7 @@ function SheetHeader({
 }
 
 function BagStep({ onClose, onContinue }: { onClose: () => void; onContinue: () => void }) {
-  const { cartItems, totalItems, totalPrice, incrementCartItem, decrementCartItem } = useCart();
+  const { cartItems, totalItems, totalPrice, incrementCartItem, decrementCartItem, clearCart, priceNotice } = useCart();
   const { submitState, submitMessage } = useCheckout();
   const { products } = useStore();
 
@@ -119,6 +119,8 @@ function BagStep({ onClose, onContinue }: { onClose: () => void; onContinue: () 
   return (
     <>
       <SheetHeader title="Sua sacola" onClose={onClose} />
+
+      {priceNotice ? <p role="status" className="mx-5 mt-3 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900">{priceNotice}</p> : null}
 
       {totalItems === 0 ? (
         <div className="flex flex-1 flex-col items-start justify-center gap-4 px-5 py-12 lg:px-7">
@@ -177,6 +179,7 @@ function BagStep({ onClose, onContinue }: { onClose: () => void; onContinue: () 
       {totalItems > 0 ? (
         <footer className="shrink-0 border-t border-dna-ink/10 px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 lg:px-7 lg:pb-7">
           <Totals subtotal={totalPrice} />
+          <button type="button" onClick={clearCart} className="mt-3 text-sm font-semibold text-dna-berry underline">Limpar sacola</button>
           <button type="button" onClick={onContinue} className="dna-btn dna-btn-primary mt-4 w-full">
             Continuar
           </button>
@@ -230,8 +233,8 @@ function Totals({ subtotal }: { subtotal: number }) {
 }
 
 function DetailsStep({ onBack, onClose }: { onBack: () => void; onClose: () => void }) {
-  const { isStoreOpen } = useStore();
-  const { totalItems } = useCart();
+  const { isStoreOpen, isStoreClosed, storeUnavailableMessage } = useStore();
+  const { totalItems, priceNotice } = useCart();
   const {
     checkout,
     canCheckout,
@@ -310,10 +313,19 @@ function DetailsStep({ onBack, onClose }: { onBack: () => void; onClose: () => v
                 value={checkout.address}
                 onChange={(event) => updateCheckoutField("address", event.target.value)}
                 className="dna-field"
-                placeholder="Rua, número e complemento"
+                placeholder="Rua ou avenida"
                 autoComplete="street-address"
                 name="address"
               />
+            </Field>
+            <Field label="Número">
+              <input value={checkout.addressNumber} onChange={(event) => updateCheckoutField("addressNumber", event.target.value)} className="dna-field" placeholder="Número ou S/N" name="address-number" maxLength={20} />
+            </Field>
+            <Field label="Complemento (opcional)">
+              <input value={checkout.addressComplement} onChange={(event) => updateCheckoutField("addressComplement", event.target.value)} className="dna-field" placeholder="Apartamento, bloco, casa…" name="address-complement" maxLength={120} />
+            </Field>
+            <Field label="Referência (opcional)">
+              <input value={checkout.addressReference} onChange={(event) => updateCheckoutField("addressReference", event.target.value)} className="dna-field" placeholder="Um ponto próximo para ajudar na entrega" name="address-reference" maxLength={180} />
             </Field>
             <Field label="Bairro">
               <input
@@ -361,7 +373,7 @@ function DetailsStep({ onBack, onClose }: { onBack: () => void; onClose: () => v
               value={checkout.changeFor}
               onChange={(event) => updateCheckoutField("changeFor", event.target.value)}
               className="dna-field"
-              placeholder="Troco para quanto?"
+              placeholder="Ex.: 50,00; vazio se não precisar"
               name="change-for"
               autoComplete="off"
               inputMode="decimal"
@@ -388,9 +400,11 @@ function DetailsStep({ onBack, onClose }: { onBack: () => void; onClose: () => v
         </div>
         <p className="text-sm text-dna-ink/60">Taxa de entrega a combinar.</p>
 
+        {priceNotice ? <p role="status" className="mt-3 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900">{priceNotice}</p> : null}
+
         {!isStoreOpen ? (
           <p className="mt-3 rounded-xl bg-dna-acai/10 px-4 py-3 text-sm font-semibold text-dna-acai">
-            No momento estamos fechados. Volte em breve 💜
+            {storeUnavailableMessage}
           </p>
         ) : null}
 
@@ -409,7 +423,7 @@ function DetailsStep({ onBack, onClose }: { onBack: () => void; onClose: () => v
           {submitState === "submitting"
             ? "Enviando pedido…"
             : !isStoreOpen
-              ? "Loja fechada"
+              ? isStoreClosed ? "Loja fechada" : "Verificando loja…"
               : canCheckout
                 ? "Finalizar pedido"
                 : "Preencha os dados"}

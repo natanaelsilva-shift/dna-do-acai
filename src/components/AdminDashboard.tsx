@@ -1,6 +1,8 @@
 "use client";
 
 import Image from "next/image";
+import { PromotionDetails } from "@/components/product/PromotionDetails";
+import { useCatalog } from "@/hooks/useCatalog";
 import {
   useCallback,
   useEffect,
@@ -200,9 +202,10 @@ export function AdminDashboard({
     getCatalogStorageSnapshot,
     getCatalogServerSnapshot,
   );
+  const published = useCatalog();
   const catalog = useMemo(
-    () => parseCatalogStorageSnapshot(catalogSnapshot),
-    [catalogSnapshot],
+    () => catalogSnapshot ? parseCatalogStorageSnapshot(catalogSnapshot) : published.catalog,
+    [catalogSnapshot, published.catalog],
   );
   const [activeTab, setActiveTab] = useState<AdminTab>("home");
   const [selectedProductId, setSelectedProductId] = useState(
@@ -298,7 +301,8 @@ export function AdminDashboard({
 
     const registerServiceWorker = () => {
       navigator.serviceWorker
-        .register("/sw.js", { scope: "/admin/" })
+        .register("/sw.js", { scope: "/admin/", updateViaCache: "none" })
+        .then((registration) => registration.update())
         .catch((error) => {
           console.log("Erro ao registrar service worker", error);
         });
@@ -796,17 +800,20 @@ export function AdminDashboard({
   }, [orders]);
 
   const fetchOrders = useCallback(async () => {
-    const response = await fetch("/api/orders", { cache: "no-store" });
+    const response = await fetch("/api/orders", {
+      cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
+    });
     const body = (await response.json()) as {
       orders?: OrderRecord[];
       error?: string;
     };
 
-    if (!response.ok) {
+    if (!response.ok || !Array.isArray(body.orders)) {
       throw new Error(body.error ?? "Não foi possível carregar os pedidos.");
     }
 
-    return body.orders ?? [];
+    return body.orders;
   }, []);
 
   const checkForNewOrders = useCallback(
@@ -845,20 +852,23 @@ export function AdminDashboard({
       if (!silent) {
         setOrdersLoading(true);
       }
-      setOrdersError("");
-
       try {
         const nextOrders = await fetchOrders();
         const hasNewOrder = detectNew ? checkForNewOrders(nextOrders) : false;
-        if (!detectNew) {
-          nextOrders.forEach((order) => {
-            knownOrderIds.current.add(order.id);
-            if (order.status === "Novo") notifiedOrderIds.current.add(order.id);
-          });
-        }
 
         setOrders(nextOrders);
         latestOrdersRef.current = nextOrders;
+        // A API também reconcilia os alertas quando outro aparelho muda o status.
+        setHighlightedOrderId((currentId) =>
+          nextOrders.some((order) => order.id === currentId && order.status === "Novo")
+            ? currentId
+            : null,
+        );
+        setNotification((current) => {
+          if (!current) return null;
+          const order = nextOrders.find((order) => order.id === current.order.id);
+          return order?.status === "Novo" ? { ...current, order } : null;
+        });
         setOrdersError("");
         if (!hasNewOrder) {
           setStatus(
@@ -884,11 +894,36 @@ export function AdminDashboard({
   );
 
   useEffect(() => {
-    const pollingInterval = window.setInterval(() => {
-      void loadOrders({ silent: true });
-    }, 5000);
+    const refreshOrders = () => void loadOrders({ silent: true, detectNew: true });
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") refreshOrders();
+    };
+
+    refreshOrders();
+    const pollingInterval = window.setInterval(refreshOrders, 3000);
+    window.addEventListener("focus", refreshOrders);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      window.clearInterval(pollingInterval);
+      window.removeEventListener("focus", refreshOrders);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [loadOrders]);
+
+  useEffect(() => {
     let supabaseChannel: ReturnType<ReturnType<typeof createClient>["channel"]> | null = null;
     let isMounted = true;
+    const logRealtimeError = (error: unknown) => {
+      if (process.env.NODE_ENV === "development") {
+        console.debug("Realtime indisponível; pedidos continuam pela API.", error);
+      }
+    };
+    // INSERT e UPDATE são apenas sinais para consultar a fonte oficial.
+    // Detectar novos em ambos evita perder um alerta se os eventos coincidirem.
+    const refreshOrders = () => {
+      if (isMounted) void loadOrders({ silent: true, detectNew: true });
+    };
 
     async function setupRealtime() {
       if (!isSupabaseConfigured()) {
@@ -897,83 +932,30 @@ export function AdminDashboard({
 
       try {
         const supabase = createClient();
-        const channel = supabase
+        supabaseChannel = supabase
           .channel("orders-listener")
           .on(
             "postgres_changes",
             { event: "INSERT", schema: "public", table: "orders" },
-            (payload) => {
-              const newOrder = payload.new as OrderRecord | null;
-
-              if (!newOrder ||
-                knownOrderIds.current.has(newOrder.id)) {
-                return;
-              }
-
-              if (isMounted) {
-                knownOrderIds.current.add(newOrder.id);
-                latestOrdersRef.current = [newOrder, ...latestOrdersRef.current];
-                setOrders((currentOrders) => {
-                  const hasOrder = currentOrders.some(
-                    (order) => order.id === newOrder.id,
-                  );
-                  return hasOrder ? currentOrders : [newOrder, ...currentOrders];
-                });
-
-                if (
-                  newOrder.status === "Novo" &&
-                  !notifiedOrderIds.current.has(newOrder.id)
-                ) {
-                  notifiedOrderIds.current.add(newOrder.id);
-                  notifyNewOrder(newOrder);
-                }
-              }
-            },
+            refreshOrders,
           )
           .on(
             "postgres_changes",
             { event: "UPDATE", schema: "public", table: "orders" },
-            (payload) => {
-              const updatedOrder = payload.new as OrderRecord | null;
-              if (!updatedOrder) {
-                return;
-              }
-
-              setOrders((currentOrders) =>
-                currentOrders.map((order) =>
-                  order.id === updatedOrder.id ? updatedOrder : order,
-                ),
-              );
-              latestOrdersRef.current = latestOrdersRef.current.map((order) =>
-                order.id === updatedOrder.id ? updatedOrder : order,
-              );
-              knownOrderIds.current.add(updatedOrder.id);
-
-              if (updatedOrder.status !== "Novo") {
-                setHighlightedOrderId((currentId) =>
-                  currentId === updatedOrder.id ? null : currentId,
-                );
-                setNotification((currentNotification) =>
-                  currentNotification?.order.id === updatedOrder.id
-                    ? null
-                    : currentNotification,
-                );
-              }
-            },
+            refreshOrders,
           );
 
-        channel.subscribe((subscriptionStatus, error) => {
+        supabaseChannel.subscribe((subscriptionStatus, error) => {
           if (subscriptionStatus === "SUBSCRIBED") {
-            console.log("Supabase Realtime conectado");
+            refreshOrders();
           }
 
           if (subscriptionStatus === "CHANNEL_ERROR" || error) {
-            console.log("Erro no Supabase Realtime", error);
+            logRealtimeError(error);
           }
         });
-        supabaseChannel = channel;
       } catch (error) {
-        console.log("Erro no Supabase Realtime", error);
+        logRealtimeError(error);
       }
     }
 
@@ -981,12 +963,11 @@ export function AdminDashboard({
 
     return () => {
       isMounted = false;
-      window.clearInterval(pollingInterval);
       if (supabaseChannel) {
-        void supabaseChannel.unsubscribe();
+        void supabaseChannel.unsubscribe().catch(logRealtimeError);
       }
     };
-  }, [loadOrders, notifyNewOrder]);
+  }, [loadOrders]);
 
   const updateOrderDeliveryFee = useCallback(
     async (orderId: string, deliveryFee: number) => {
@@ -1072,10 +1053,17 @@ export function AdminDashboard({
     window.dispatchEvent(new Event("dna-catalog-updated"));
   }
 
-  function publishCatalog() {
-    window.localStorage.setItem(CATALOG_STORAGE_KEY, JSON.stringify(catalog));
-    window.dispatchEvent(new Event("dna-catalog-updated"));
-    setStatus(`Catálogo publicado às ${new Date().toLocaleTimeString("pt-BR")}.`);
+  async function publishCatalog() {
+    setStatus("Publicando catálogo…");
+    try {
+      const response = await fetch("/api/catalog", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(catalog) });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "Não foi possível publicar o catálogo.");
+      window.localStorage.setItem(CATALOG_STORAGE_KEY, JSON.stringify(body.catalog));
+      window.dispatchEvent(new Event("dna-catalog-updated"));
+      window.dispatchEvent(new Event("dna-catalog-published"));
+      setStatus(`Catálogo publicado para todos os clientes às ${new Date().toLocaleTimeString("pt-BR")}.`);
+    } catch (error) { setStatus(error instanceof Error ? error.message : "Falha ao publicar. Rascunho preservado."); }
   }
 
   function resetCatalog() {
@@ -1085,13 +1073,13 @@ export function AdminDashboard({
       return;
     }
 
-    window.localStorage.removeItem(CATALOG_STORAGE_KEY);
+    window.localStorage.setItem(CATALOG_STORAGE_KEY, JSON.stringify(initialCatalog));
     window.localStorage.removeItem(LEGACY_CATALOG_STORAGE_KEY);
     window.dispatchEvent(new Event("dna-catalog-updated"));
     setSelectedProductId(initialCatalog.products[0]?.id ?? "");
     setSelectedCategoryId(initialCatalog.categories[0]?.id ?? "");
     setSelectedGroupId(initialCatalog.complementGroups[0]?.id ?? "");
-    setStatus("Catálogo padrão restaurado.");
+    setStatus("Rascunho padrão restaurado. Publique para atualizar a loja.");
   }
 
   function exportCatalog() {
@@ -1307,7 +1295,7 @@ export function AdminDashboard({
   }
 
   async function toggleStoreStatus() {
-    if (storeState.isUpdating || !isStoreStatusKnown) {
+    if (storeState.isUpdating) {
       return;
     }
 
@@ -1329,10 +1317,12 @@ export function AdminDashboard({
   async function logoutAdmin() {
     try {
       if (isSupabaseConfigured()) {
-        await createClient().auth.signOut();
+        const { error } = await createClient().auth.signOut({ scope: "local" });
+        if (error) throw error;
       }
-    } finally {
-      window.location.assign("/");
+      window.location.replace("/admin/login");
+    } catch {
+      setStatus("Não foi possível encerrar a sessão. Tente novamente.");
     }
   }
 
@@ -1348,9 +1338,9 @@ export function AdminDashboard({
             </div>
           </div>
           <div className="grid min-w-0 flex-1 grid-cols-5 items-center justify-items-end gap-1 sm:flex sm:justify-end sm:gap-2">
-            <button type="button" disabled={storeState.isUpdating || !isStoreStatusKnown} onClick={() => void toggleStoreStatus()} className={`inline-flex min-h-11 w-full items-center justify-center gap-1 rounded-xl px-1 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:gap-2 sm:px-3 sm:text-sm ${!isStoreStatusKnown ? "bg-[#647069]" : isStoreOpen ? "bg-[#178a4b]" : "bg-[#c93636]"}`}>
+            <button type="button" disabled={storeState.isUpdating} onClick={() => void toggleStoreStatus()} aria-label={isStoreOpen ? "Fechar loja" : "Abrir loja"} className={`inline-flex min-h-11 w-full items-center justify-center gap-1 rounded-xl px-1 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:gap-2 sm:px-3 sm:text-sm ${!isStoreStatusKnown ? "bg-[#647069]" : isStoreOpen ? "bg-[#178a4b]" : "bg-[#c93636]"}`}>
               <span className="hidden size-2.5 rounded-full bg-white sm:block" />
-              <span className="hidden sm:inline">Loja </span>{!isStoreStatusKnown ? "indisponível" : isStoreOpen ? "aberta" : "fechada"}
+              <span className="hidden sm:inline">Loja </span>{!isStoreStatusKnown ? "Abrir loja" : isStoreOpen ? "aberta" : "fechada"}
             </button>
             <button type="button" onClick={() => setActiveTab("orders")} title="Ver novos pedidos" aria-label={`${newOrdersCount} pedidos novos`} className="relative grid size-11 place-items-center rounded-xl bg-white/10 text-lg transition hover:bg-white/20">☷{newOrdersCount > 0 ? <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-[#d7a948] px-1 text-[10px] font-black leading-5 text-[#103d2c]">{newOrdersCount}</span> : null}</button>
             <button type="button" onClick={() => void enableOrderSound()} title="Ativar som de pedidos" aria-label="Ativar som de pedidos" className={`grid size-11 place-items-center rounded-xl text-lg transition ${soundEnabled ? "bg-[#d7a948] text-[#103d2c]" : "bg-white/10 hover:bg-white/20"}`}>♫</button>
@@ -1404,7 +1394,7 @@ export function AdminDashboard({
               highlightedOrderId={highlightedOrderId}
               loading={ordersLoading}
               orders={orders}
-              onRefresh={() => loadOrders({ detectNew: false })}
+              onRefresh={() => loadOrders({ detectNew: true })}
               onPrintNode={(order) => requestServerOrderPrint(order)}
               onLocalPrint={(order, reprint) =>
                 queueOrderPrint(order, { trigger: "manual", reprint })
@@ -1648,7 +1638,7 @@ function DashboardOverview({
   ];
   const actions = [
     { label: "Ver pedidos novos", detail: `${newOrders} aguardando ação`, action: onGoOrders },
-    { label: !isStoreStatusKnown ? "Status indisponível" : isStoreOpen ? "Fechar loja" : "Abrir loja", detail: isStoreStatusKnown ? "Atualiza imediatamente" : "Verifique a conexão com o banco", action: onToggleStore },
+    { label: isStoreOpen ? "Fechar loja" : "Abrir loja", detail: isStoreStatusKnown ? "Atualiza imediatamente" : "Tentar abrir e atualizar o status", action: onToggleStore },
     { label: "Cadastrar produto", detail: "Adicionar ao cardápio", action: onAddProduct },
     { label: "Alterar preços", detail: "Gerenciar produtos", action: onGoProducts },
     { label: "Ativar som", detail: "Liberar alertas", action: onEnableSound },
@@ -1887,7 +1877,7 @@ function SettingsPanel({
         <SettingsCard title="WhatsApp" description={`Atendimento: ${WHATSAPP_BUSINESS_PHONE_NUMBER}`} />
         <SettingsCard title="Instagram" description="Dados de contato e rede social." />
         <SettingsCard title="Horário de funcionamento" description="Consulte e organize os horários da loja." />
-        <SettingsCard title="Status da loja" description={!isStoreStatusKnown ? "Não foi possível consultar o banco de dados." : isStoreOpen ? "A loja está recebendo pedidos." : "Novos pedidos estão bloqueados."} actionLabel={!isStoreStatusKnown ? undefined : isStoreOpen ? "Fechar loja" : "Abrir loja"} onAction={onToggleStore} />
+        <SettingsCard title="Status da loja" description={!isStoreStatusKnown ? "Não foi possível consultar o banco de dados. Você pode tentar abrir a loja novamente." : isStoreOpen ? "A loja está recebendo pedidos." : "Novos pedidos estão bloqueados."} actionLabel={isStoreOpen ? "Fechar loja" : "Abrir loja"} onAction={onToggleStore} />
         <SettingsCard title="Som de pedidos" description={soundEnabled ? "Alertas sonoros ativados." : "Toque para liberar o áudio neste aparelho."} actionLabel={soundEnabled ? "Testar som" : "Ativar som"} onAction={soundEnabled ? onTestSound : onEnableSound} />
         <SettingsCard title="Adicionais pagos" description="Preços dos adicionais e opções extras." actionLabel="Gerenciar" onAction={() => onNavigate("complements")} />
         <SettingsCard title="Complementos" description="Grupos, limites e opções existentes." actionLabel="Gerenciar" onAction={() => onNavigate("complements")} />
@@ -2367,6 +2357,7 @@ function ProductsPanel({
 
         {product ? (
           <div className="grid gap-4">
+            <PromotionDetails product={product} />
             <div className="grid gap-4 md:grid-cols-2">
               <TextField
                 label="Nome"

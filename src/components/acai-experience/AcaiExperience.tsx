@@ -416,10 +416,13 @@ export function AcaiExperience() {
                         </picture>
                         <video
                           ref={videoRef}
+                          autoPlay
                           muted
                           loop
                           playsInline
                           preload="none"
+                          poster={heroAssets.poster.webp}
+                          onError={(event) => { event.currentTarget.style.opacity = "0"; }}
                           aria-hidden="true"
                           tabIndex={-1}
                           className="absolute inset-0 size-full object-cover opacity-0"

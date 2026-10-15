@@ -1,96 +1,30 @@
-const CACHE_NAME = "dna-acai-pwa-v5";
-const PRECACHE_ASSETS = [
-  "/",
-  "/admin/pedidos",
-  "/manifest.json",
-  "/admin-manifest.json",
-  "/favicon.ico",
-  "/icons/icon-192.png",
-  "/icons/icon-512.png",
-  "/apple-touch-icon.png",
-  "/images/logo-dna-acai.png",
-  "/images/og-dna-acai.png",
-  "/sounds/novo-pedido.mp3",
-];
+const CACHE_NAME = "dna-acai-pwa-v6";
+const PRECACHE_ASSETS = ["/offline.html", "/manifest.json", "/admin-manifest.json", "/favicon.ico", "/icons/icon-192.png", "/icons/icon-512.png", "/apple-touch-icon.png", "/images/logo-dna-acai.png"];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches
-      .open(CACHE_NAME)
-      .then((cache) => cache.addAll(PRECACHE_ASSETS))
-      .catch(() => undefined),
-  );
-  self.skipWaiting();
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_ASSETS)).then(() => self.skipWaiting()));
 });
-
 self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches
-      .keys()
-      .then((keys) =>
-        Promise.all(
-          keys
-            .filter((key) => key !== CACHE_NAME)
-            .map((key) => caches.delete(key)),
-        ),
-      )
-      .then(() => self.clients.claim()),
-  );
+  event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key.startsWith("dna-acai-pwa-") && key !== CACHE_NAME).map((key) => caches.delete(key)))).then(() => self.clients.claim()));
 });
-
 self.addEventListener("fetch", (event) => {
   const request = event.request;
-
-  if (request.method !== "GET") {
-    return;
-  }
-
   const url = new URL(request.url);
-
-  if (url.origin !== self.location.origin || url.pathname.startsWith("/api/")) {
+  if (request.method !== "GET" || url.origin !== self.location.origin || request.headers.has("range") ||
+    url.pathname.startsWith("/api/") || request.headers.has("rsc") || url.searchParams.has("_rsc")) return;
+  if (request.mode === "navigate") {
+    // HTML e dados administrativos nunca são persistidos, inclusive após logout.
+    event.respondWith(fetch(request).catch(async () => (await caches.match("/offline.html")) ||
+      new Response("Sem conexão. Reconecte para continuar.", { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" } })));
     return;
   }
-
-  const isNavigation = request.mode === "navigate";
-  const isPrecachedAsset = PRECACHE_ASSETS.includes(url.pathname);
-  const isStaticAsset = ["image", "style", "script", "font", "audio"].includes(
-    request.destination,
-  );
-
-  if (!isNavigation && !isPrecachedAsset && !isStaticAsset) {
-    return;
-  }
-
-  event.respondWith(
-    fetch(request)
-      .then((response) => {
-        if (response.ok) {
-          const responseToCache = response.clone();
-          caches
-            .open(CACHE_NAME)
-            .then((cache) => cache.put(request, responseToCache))
-            .catch(() => undefined);
-        }
-
-        return response;
-      })
-      .catch(async () => {
-        const cachedResponse = await caches.match(request);
-
-        if (cachedResponse) {
-          return cachedResponse;
-        }
-
-        if (isNavigation) {
-          return url.pathname.startsWith("/admin")
-            ? caches.match("/admin/pedidos")
-            : caches.match("/");
-        }
-
-        return new Response("Offline", {
-          status: 503,
-          statusText: "Offline",
-        });
-      }),
-  );
+  if (url.pathname.startsWith("/admin") || url.pathname.startsWith("/_next/") ||
+    !["image", "font", "audio"].includes(request.destination) && !PRECACHE_ASSETS.includes(url.pathname)) return;
+  event.respondWith(fetch(request).then((response) => {
+    if (response.ok && response.status !== 206 && !/no-store|private/i.test(response.headers.get("cache-control") || "")) {
+      const copy = response.clone();
+      event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(request, copy)).catch(() => undefined));
+    }
+    return response;
+  }).catch(async () => (await caches.match(request)) || new Response("Offline", { status: 503 })));
 });

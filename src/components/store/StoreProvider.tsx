@@ -14,6 +14,9 @@ type StoreContextValue = {
   complementGroups: ComplementGroup[];
   products: Product[];
   isStoreOpen: boolean;
+  isStoreStatusKnown: boolean;
+  isStoreClosed: boolean;
+  storeUnavailableMessage: string;
   storeStatusLabel: string;
 };
 
@@ -32,13 +35,18 @@ export function StoreProvider({
     initialStatus: initialStoreStatus,
     poll: true,
   });
-  const { categories, complementGroups, products } = useCatalog();
-  const isStoreOpen = storeState.status === "open";
+  const { categories, complementGroups, products, error: catalogError, loaded: catalogLoaded } = useCatalog();
+  const isStoreOpen = storeState.status === "open" && catalogLoaded;
+  const isStoreStatusKnown = storeState.status !== null;
+  const isStoreClosed = storeState.status === "closed";
+  const storeUnavailableMessage = isStoreClosed ? "No momento estamos fechados. Volte em breve 💜"
+    : !isStoreStatusKnown ? "Estamos verificando o funcionamento da loja. Tente novamente em instantes."
+    : catalogError || "Atualizando o cardápio…";
   const storeStatusLabel = getStoreStatusLabel(storeState.status);
 
   const value = useMemo<StoreContextValue>(
-    () => ({ categories, complementGroups, products, isStoreOpen, storeStatusLabel }),
-    [categories, complementGroups, products, isStoreOpen, storeStatusLabel],
+    () => ({ categories, complementGroups, products, isStoreOpen, isStoreClosed, isStoreStatusKnown, storeUnavailableMessage, storeStatusLabel }),
+    [categories, complementGroups, products, isStoreOpen, isStoreClosed, isStoreStatusKnown, storeUnavailableMessage, storeStatusLabel],
   );
 
   return (

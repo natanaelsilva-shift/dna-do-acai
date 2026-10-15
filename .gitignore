@@ -21,6 +21,7 @@ next-dev*.log
 
 # local development data
 /local-data
+/supabase/.temp/
 
 # env
 .env

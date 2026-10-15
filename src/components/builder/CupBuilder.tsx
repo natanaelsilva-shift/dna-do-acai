@@ -24,6 +24,8 @@ import {
   type SelectionState,
 } from "@/lib/catalog/customization";
 import { formatCurrency, formatOptionPrice } from "@/lib/format/currency";
+import { usePromotionClock } from "@/components/store/PromotionProvider";
+import { getEffectivePrice } from "@/lib/catalog/pricing";
 
 const FREE_GROUP_ID = "complementos";
 
@@ -32,6 +34,7 @@ const FREE_GROUP_ID = "complementos";
 // idêntico ao montado pelo cardápio.
 export function CupBuilder() {
   const { products, complementGroups } = useStore();
+  const { now, currentTime } = usePromotionClock();
   const { addCartLine, openCartDrawer } = useCart();
 
   const sizes = useMemo(
@@ -71,7 +74,7 @@ export function CupBuilder() {
   );
   const freeLimit = freeGroup?.maxSelections ?? 0;
   const freeSelected = freeGroup ? selections[freeGroup.id] ?? [] : [];
-  const price = calculateCustomizedPrice(product, selections, groups);
+  const price = calculateCustomizedPrice(product, selections, groups, now);
   const valid = isSelectionValid(selections, groups);
 
   const previewIngredients: PreviewIngredient[] = freeGroup
@@ -124,7 +127,7 @@ export function CupBuilder() {
   function addToCart() {
     if (!product || !valid) return;
 
-    addCartLine(buildCustomizedCupCartLine(product, selections, groups));
+    addCartLine(buildCustomizedCupCartLine(product, selections, groups, currentTime()));
     setAdded(`${product.name} na sacola.`);
     setMessage("");
     setSelections(getDefaultSelections(complementGroups));
@@ -171,7 +174,7 @@ export function CupBuilder() {
                       {size.tagline}
                     </span>
                     <span className="dna-price mt-1.5 block text-base sm:text-lg">
-                      {formatCurrency(size.product.price)}
+                      {formatCurrency(getEffectivePrice(size.product, now))}
                     </span>
                     {limit ? (
                       <span className={`mt-0.5 block text-xs ${selected ? "text-dna-ink/60" : "text-dna-cream/50"}`}>

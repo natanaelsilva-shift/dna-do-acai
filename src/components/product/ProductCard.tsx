@@ -7,6 +7,9 @@ import { useCart } from "@/components/cart/CartProvider";
 import { ProductArt } from "@/components/product/ProductArt";
 import { isComboProduct } from "@/lib/catalog/customization";
 import { formatCurrency } from "@/lib/format/currency";
+import { usePromotionClock } from "@/components/store/PromotionProvider";
+import { getEffectivePrice, isPromotionActive } from "@/lib/catalog/pricing";
+import { promotion } from "@/data/promotion";
 
 type Variant = "standard" | "feature";
 
@@ -25,15 +28,19 @@ export function ProductCard({
   const visual = productVisuals[product.id];
   const combo = isComboProduct(product);
   const feature = variant === "feature";
+  const { now } = usePromotionClock();
+  const onPromotion = isPromotionActive(product, now);
+  const originalPrice = onPromotion ? product.price
+    : promotion.prices[product.id] === undefined ? product.originalPrice : undefined;
 
   // O espaço para a foto vazar acima do card fica no padding do wrapper (e não
   // em margem no card): com h-full dentro do grid, margem faria o card invadir
   // a seção seguinte.
   return (
-    <div className={`h-full ${feature ? "pt-16 lg:pt-24" : "pt-14"}`}>
-    <article className="dna-card group flex h-full flex-col transition-transform duration-500 ease-[var(--ease-dna)] hover:-translate-y-1">
+    <div className={`flex h-full flex-col ${feature ? "pt-16 lg:pt-24" : "pt-14"}`}>
+    <article data-product-id={product.id} data-promotion={onPromotion} className="dna-card group flex flex-1 flex-col transition-transform duration-500 ease-[var(--ease-dna)] hover:-translate-y-1">
       <div
-        className={`relative transition-transform duration-500 ease-[var(--ease-dna)] group-hover:-translate-y-2 group-hover:scale-[1.03] motion-reduce:transform-none ${
+        className={`pointer-events-none relative shrink-0 transition-transform duration-500 ease-[var(--ease-dna)] group-hover:-translate-y-2 group-hover:scale-[1.03] motion-reduce:transform-none ${
           feature ? "-mt-16 h-80 lg:-mt-24 lg:h-[26rem]" : "-mt-14 h-72"
         }`}
       >
@@ -48,6 +55,7 @@ export function ProductCard({
           </span>
         ) : null}
         <ProductArt product={product} priority={priority} className="relative h-full" />
+        {onPromotion ? <span className="dna-promo-badge absolute bottom-2 left-5">PROMOÇÃO</span> : null}
       </div>
 
       <div className="flex flex-1 flex-col p-5 pt-4 sm:p-6 sm:pt-5">
@@ -63,13 +71,13 @@ export function ProductCard({
 
         <div className="mt-auto flex items-end justify-between gap-3 pt-6">
           <div>
-            {product.originalPrice ? (
-              <p className="text-sm text-dna-cream/45 line-through">
-                {formatCurrency(product.originalPrice)}
+            {originalPrice ? (
+              <p className={`text-sm text-dna-cream/70 line-through ${onPromotion ? "decoration-red-400 decoration-2" : ""}`}>
+                {formatCurrency(originalPrice)}
               </p>
             ) : null}
-            <p className={`dna-price ${feature ? "text-3xl" : "text-2xl"}`}>
-              {formatCurrency(product.price)}
+            <p className={`dna-price ${onPromotion ? "dna-promo-price" : ""} ${feature ? "text-3xl" : "text-2xl"}`}>
+              {formatCurrency(getEffectivePrice(product, now))}
             </p>
             {product.customizable && quantity > 0 ? (
               <p className="mt-1 text-xs font-semibold text-dna-sprout">

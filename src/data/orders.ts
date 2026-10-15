@@ -29,9 +29,13 @@ export type OrderItem = {
   unitPrice: number;
   totalPrice: number;
   customization?: OrderCustomizationLine[];
+  // IDs usados para validar novos pedidos; pedidos históricos não precisam deles.
+  selections?: Record<string, string[]>;
+  comboSelections?: Record<string, string[]>[];
 };
 
 export type CreateOrderPayload = {
+  requestId?: string;
   customerName: string;
   customerPhone: string;
   deliveryMethod: DeliveryMethod;

@@ -2,7 +2,9 @@ import type { Metadata, Viewport } from "next";
 import { AdminDashboard } from "@/components/AdminDashboard";
 import type { OrderRecord } from "@/data/orders";
 import { getStoreStatus } from "@/lib/store-status/server";
-import { createClient } from "@/lib/supabase/server";
+import { requireAdmin } from "@/lib/supabase/admin";
+import { redirect } from "next/navigation";
+import { reportServerError } from "@/lib/server/http";
 
 export const metadata: Metadata = {
   title: "Pedidos | Admin | DNA do Açaí",
@@ -17,27 +19,27 @@ export const viewport: Viewport = {
 
 export const dynamic = "force-dynamic";
 
-async function getInitialOrders() {
+async function getInitialOrders(supabase: Awaited<ReturnType<typeof requireAdmin>>["supabase"]) {
   try {
-    const supabase = await createClient();
     const { data, error } = await supabase
       .from("orders")
       .select("*")
       .order("created_at", { ascending: false });
 
-    if (error) {
-      return [];
-    }
+    if (error) throw error;
 
     return (data ?? []) as OrderRecord[];
-  } catch {
+  } catch (error) {
+    reportServerError("admin-orders", error);
     return [];
   }
 }
 
 export default async function AdminOrdersPage() {
+  const admin = await requireAdmin().catch(() => null);
+  if (!admin) redirect("/admin/login");
   const [initialOrders, initialStoreStatus] = await Promise.all([
-    getInitialOrders(),
+    getInitialOrders(admin.supabase),
     getStoreStatus().catch(() => undefined),
   ]);
 

@@ -197,6 +197,26 @@ select {
     letter-spacing: -0.01em;
   }
 
+  .dna-promo-badge {
+    border-radius: 999px;
+    background: #c8f542;
+    color: #16120b;
+    padding: 0.35rem 0.8rem;
+    font-size: 0.75rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+  }
+
+  .dna-promo-price {
+    display: inline-block;
+    margin-top: 0.25rem;
+    border-radius: 0.65rem;
+    background: #c8f542;
+    color: #16120b;
+    padding: 0.3rem 0.55rem;
+    white-space: nowrap;
+  }
+
   /* Botões: alvo mínimo de 48px, resposta física curta ao toque. */
   .dna-btn {
     display: inline-flex;

@@ -1,35 +1,15 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { requireAdmin } from "@/lib/supabase/admin";
+import { createOrderWriter } from "@/lib/supabase/order-writer";
+import { apiError, noStore } from "@/lib/server/http";
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
-    const supabase = await createClient();
-    const { data: authData, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !authData.user) {
-      return NextResponse.json(
-        { error: "Sessão administrativa não encontrada." },
-        { status: 401 },
-      );
-    }
-
-    const requestedBy =
-      authData.user.email ?? authData.user.id ?? "administrador";
-    const { data, error } = await supabase.rpc("request_test_print", {
-      p_requested_by: requestedBy,
-    });
-
-    if (error) throw new Error(error.message);
-
-    return NextResponse.json({
-      jobId: data,
-      message: "Comanda de teste enviada para a fila do PrintNode.",
-    });
+    const { user } = await requireAdmin(request);
+    const { data, error } = await createOrderWriter().rpc("request_test_print", { p_requested_by: user.email ?? user.id });
+    if (error) throw error;
+    return NextResponse.json({ jobId: data, message: "Comanda de teste enviada para a fila do PrintNode." }, { headers: noStore });
   } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Não foi possível criar a impressão de teste.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiError(error, "printing-test", "Não foi possível criar a impressão de teste. Verifique a configuração do serviço.");
   }
 }

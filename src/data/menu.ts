@@ -1,3 +1,5 @@
+import { promotion } from "@/data/promotion";
+
 export type Category = {
   id: string;
   name: string;
@@ -226,6 +228,12 @@ export function withCatalogProductImages(catalog: CatalogData): CatalogData {
   return {
     ...normalizedCatalog,
     products: normalizedCatalog.products.map((product) => {
+      // Snapshots antigos do navegador não substituem o preço normal da campanha.
+      // A configuração promocional continua separada do preço base.
+      if (promotion.prices[product.id] !== undefined) {
+        const officialProduct = products.find((item) => item.id === product.id);
+        if (officialProduct) product = { ...product, price: officialProduct.price };
+      }
       const defaults = productImageDefaults[product.id];
 
       if (defaults) {

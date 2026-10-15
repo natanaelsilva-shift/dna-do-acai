@@ -48,7 +48,7 @@ export function ClientPwaInstall({
       return () => window.cancelAnimationFrame(frameId);
     }
 
-    navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch((error) => {
+    navigator.serviceWorker.register("/sw.js", { scope: "/", updateViaCache: "none" }).then((registration) => registration.update()).catch((error) => {
       console.log("Erro ao registrar service worker da loja", error);
     });
 
@@ -60,9 +60,10 @@ export function ClientPwaInstall({
       return;
     }
 
-    window.setTimeout(() => {
+    const timer = window.setTimeout(() => {
       document.getElementById("cardapio")?.scrollIntoView({ block: "start" });
     }, 350);
+    return () => window.clearTimeout(timer);
   }, []);
 
   useEffect(() => {

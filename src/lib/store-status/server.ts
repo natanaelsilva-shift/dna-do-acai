@@ -1,3 +1,4 @@
+import "server-only";
 import { isStoreStatus, type StoreStatus, type StoreStatusPayload } from "@/data/store-status";
 import { createClient } from "@/lib/supabase/server";
 
@@ -25,10 +26,12 @@ export async function getStoreStatus(): Promise<StoreStatusPayload> {
     .from("store_settings")
     .select("status, updated_at")
     .eq("id", STORE_SETTINGS_ID)
+    .abortSignal(AbortSignal.timeout(4000))
+    .retry(false)
     .single();
 
   if (error) {
-    throw new Error(`Não foi possível ler o status da loja no banco: ${error.message}`);
+    throw error;
   }
 
   return toStoreStatusPayload(data as StoreSettingsRow);
@@ -45,7 +48,7 @@ export async function updateStoreStatus(status: StoreStatus): Promise<StoreStatu
     .single();
 
   if (error) {
-    throw new Error(`Não foi possível atualizar o status da loja no banco: ${error.message}`);
+    throw error;
   }
 
   return toStoreStatusPayload(data as StoreSettingsRow);

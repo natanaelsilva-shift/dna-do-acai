@@ -52,6 +52,7 @@ function payloadTime(payload: StoreStatusPayload) {
 export async function fetchStoreStatus() {
   const response = await fetch("/api/store-status", {
     cache: "no-store",
+    signal: AbortSignal.timeout(6000),
     headers: { "Cache-Control": "no-cache" },
   });
 
@@ -110,6 +111,12 @@ export function useStoreStatus({
           setError("");
         }
         return payload;
+      })
+      .catch((refreshError) => {
+        if (mountedRef.current) {
+          setError(refreshError instanceof Error ? refreshError.message : "Não foi possível consultar a loja.");
+        }
+        throw refreshError;
       })
       .finally(() => {
         refreshPromiseRef.current = null;
@@ -225,7 +232,7 @@ export function useStoreStatus({
       cleanup = () => {
         void supabase.removeChannel(channel);
       };
-    });
+    }).catch(() => undefined);
 
     return () => {
       disposed = true;
@@ -234,9 +241,9 @@ export function useStoreStatus({
   }, [applyDatabaseStatus]);
 
   return {
-    status: storeStatus?.status ?? null,
+    status: error ? null : storeStatus?.status ?? null,
     updatedAt: storeStatus?.updatedAt ?? null,
-    isLoaded: storeStatus !== null,
+    isLoaded: storeStatus !== null && !error,
     error,
     isUpdating,
     refresh,

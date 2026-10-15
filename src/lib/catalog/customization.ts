@@ -7,6 +7,7 @@ import type {
 import type { OrderCustomizationLine } from "@/data/orders";
 import type { CartLine } from "@/lib/cart/types";
 import { formatCurrency } from "@/lib/format/currency";
+import { getEffectivePrice, isPromotionActive } from "@/lib/catalog/pricing";
 
 // Regras de personalização de copos e combos. Preço, limites e linhas de
 // customização daqui alimentam o carrinho, o payload do pedido e a comanda
@@ -125,14 +126,16 @@ export function calculateCustomizedPrice(
   product: Product,
   selections: SelectionState,
   complementGroups: ComplementGroup[],
+  now = Date.now(),
 ) {
-  return product.price + getSelectionsPrice(selections, complementGroups);
+  return getEffectivePrice(product, now) + getSelectionsPrice(selections, complementGroups);
 }
 
 export function calculateComboCustomizedPrice(
   product: Product,
   comboSelections: SelectionState[],
   complementGroups: ComplementGroup[],
+  now = Date.now(),
 ) {
   let customizableCupIndex = 0;
 
@@ -149,7 +152,7 @@ export function calculateComboCustomizedPrice(
     customizableCupIndex += 1;
 
     return total + getSelectionsPrice(cupSelections, cupComplementGroups);
-  }, product.price);
+  }, getEffectivePrice(product, now));
 }
 
 export function formatCustomizationOption(
@@ -295,6 +298,7 @@ export function buildCustomizedCupCartLine(
   product: Product,
   selections: SelectionState,
   complementGroups: ComplementGroup[],
+  now = Date.now(),
 ): CartLine {
   return {
     id: buildCustomizedItemId(product.id, selections, complementGroups),
@@ -302,7 +306,9 @@ export function buildCustomizedCupCartLine(
     name: product.name,
     image: product.image,
     imagePosition: product.imagePosition,
-    unitPrice: calculateCustomizedPrice(product, selections, complementGroups),
+    unitPrice: calculateCustomizedPrice(product, selections, complementGroups, now),
+    selections,
+    promotionApplied: isPromotionActive(product, now),
     customization: buildCustomizationLines(selections, complementGroups),
   };
 }
@@ -311,6 +317,7 @@ export function buildComboCartLine(
   product: Product,
   comboSelections: SelectionState[],
   complementGroups: ComplementGroup[],
+  now = Date.now(),
 ): CartLine {
   return {
     id: buildComboCustomizedItemId(
@@ -322,19 +329,21 @@ export function buildComboCartLine(
     name: product.name,
     image: product.image,
     imagePosition: product.imagePosition,
-    unitPrice: calculateComboCustomizedPrice(product, comboSelections, complementGroups),
+    unitPrice: calculateComboCustomizedPrice(product, comboSelections, complementGroups, now),
+    comboSelections,
     customization: buildComboCustomizationLines(product, comboSelections, complementGroups),
   };
 }
 
-export function buildSimpleCartLine(product: Product): CartLine {
+export function buildSimpleCartLine(product: Product, now = Date.now()): CartLine {
   return {
     id: product.id,
     productId: product.id,
     name: product.name,
     image: product.image,
     imagePosition: product.imagePosition,
-    unitPrice: product.price,
+    unitPrice: getEffectivePrice(product, now),
+    promotionApplied: isPromotionActive(product, now),
   };
 }
 

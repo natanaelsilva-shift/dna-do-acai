@@ -6,6 +6,9 @@ export type CheckoutForm = {
   deliveryMethod: DeliveryMethod;
   address: string;
   neighborhood: string;
+  addressNumber: string;
+  addressComplement: string;
+  addressReference: string;
   paymentMethod: PaymentMethod;
   changeFor: string;
   notes: string;
@@ -25,6 +28,9 @@ export const initialCheckoutForm: CheckoutForm = {
   deliveryMethod: "delivery",
   address: "",
   neighborhood: "",
+  addressNumber: "",
+  addressComplement: "",
+  addressReference: "",
   paymentMethod: "pix",
   changeFor: "",
   notes: "",

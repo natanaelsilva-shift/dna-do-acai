@@ -1,217 +1,74 @@
 import { NextResponse } from "next/server";
-import {
-  WHATSAPP_BUSINESS_PHONE_NUMBER,
-  type CreateOrderPayload,
-  type DeliveryMethod,
-  type OrderCustomizationLine,
-  type OrderItem,
-  type PaymentMethod,
-} from "@/data/orders";
+import { WHATSAPP_BUSINESS_PHONE_NUMBER } from "@/data/orders";
 import { getStoreStatus } from "@/lib/store-status/server";
-import { createClient } from "@/lib/supabase/server";
+import { requireAdmin } from "@/lib/supabase/admin";
+import { createOrderWriter } from "@/lib/supabase/order-writer";
+import { OrderPricingError, quoteOrderItems } from "@/lib/orders/pricing";
+import { OrderValidationError, validateCheckout } from "@/lib/checkout/validation";
+import { apiError, assertSameOrigin, assertUuid, HttpError, noStore } from "@/lib/server/http";
 import { buildWhatsAppBusinessOrderPayload } from "@/lib/whatsapp/business";
+import { getPublishedCatalog } from "@/lib/catalog/server";
 
 export const dynamic = "force-dynamic";
 
-const paymentLabels: Record<PaymentMethod, string> = {
-  pix: "Pix",
-  card: "Cartão na entrega",
-  cash: "Dinheiro",
-};
-
-function asRecord(value: unknown) {
-  return value && typeof value === "object"
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-function asString(value: unknown) {
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function asCents(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0
-    ? Math.round(value)
-    : 0;
-}
-
-function asQuantity(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) && value > 0
-    ? Math.floor(value)
-    : 0;
-}
-
-function asDeliveryMethod(value: unknown): DeliveryMethod {
-  return value === "pickup" ? "pickup" : "delivery";
-}
-
-function asPaymentMethod(value: unknown): PaymentMethod {
-  return value === "card" || value === "cash" ? value : "pix";
-}
-
-function normalizeCustomization(value: unknown): OrderCustomizationLine[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value
-    .map((line) => {
-      const record = asRecord(line);
-
-      return {
-        groupTitle: asString(record.groupTitle),
-        options: asString(record.options),
-        optionsList: Array.isArray(record.optionsList)
-          ? record.optionsList.map(asString).filter(Boolean)
-          : undefined,
-        price: asCents(record.price),
-      };
-    })
-    .filter((line) => line.groupTitle && line.options);
-}
-
-function normalizeItems(value: unknown): OrderItem[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value
-    .map((item) => {
-      const record = asRecord(item);
-      const quantity = asQuantity(record.quantity);
-      const unitPrice = asCents(record.unitPrice);
-
-      return {
-        id: asString(record.id),
-        productId: asString(record.productId),
-        name: asString(record.name),
-        quantity,
-        unitPrice,
-        totalPrice: quantity * unitPrice,
-        customization: normalizeCustomization(record.customization),
-      };
-    })
-    .filter((item) => item.id && item.productId && item.name && item.quantity > 0);
-}
-
-function normalizeOrderPayload(value: unknown): CreateOrderPayload {
-  const record = asRecord(value);
-  const deliveryMethod = asDeliveryMethod(record.deliveryMethod);
-  const paymentMethod = asPaymentMethod(record.paymentMethod);
-  const items = normalizeItems(record.items);
-  const subtotal = items.reduce((total, item) => total + item.totalPrice, 0);
-
-  return {
-    customerName: asString(record.customerName),
-    customerPhone: asString(record.customerPhone),
-    deliveryMethod,
-    address: asString(record.address),
-    neighborhood: asString(record.neighborhood),
-    paymentMethod,
-    paymentLabel: paymentLabels[paymentMethod],
-    changeFor: asString(record.changeFor),
-    notes: asString(record.notes),
-    items,
-    subtotal,
-    deliveryFee: null,
-    total: subtotal,
-  };
-}
-
-function validateOrder(order: CreateOrderPayload) {
-  if (!order.customerName) {
-    return "Informe o nome do cliente.";
-  }
-
-  if (!order.customerPhone) {
-    return "Informe o telefone do cliente.";
-  }
-
-  if (order.deliveryMethod === "delivery" && !order.address) {
-    return "Informe o endereço de entrega.";
-  }
-
-  if (order.items.length === 0) {
-    return "Adicione ao menos um item ao pedido.";
-  }
-
-  return null;
-}
-
 export async function GET() {
   try {
-    const supabase = await createClient();
-    const { data, error } = await supabase
-      .from("orders")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    return NextResponse.json({ orders: data ?? [] });
+    const { supabase } = await requireAdmin();
+    const { data, error } = await supabase.from("orders").select("*").order("created_at", { ascending: false });
+    if (error) throw error;
+    return NextResponse.json({ orders: data ?? [] }, { headers: noStore });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Não foi possível carregar os pedidos.";
-
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiError(error, "orders-read", "Não foi possível carregar os pedidos. Tente novamente.");
   }
 }
 
 export async function POST(request: Request) {
   try {
+    assertSameOrigin(request);
+    const raw = await request.text();
+    if (raw.length > 100_000) throw new HttpError(413, "Pedido muito grande. Reduza os itens ou observações.");
+    const body = JSON.parse(raw);
+    if (!body || typeof body !== "object" || Array.isArray(body)) throw new HttpError(400, "Pedido inválido.");
+    const requestId = body.requestId;
+    if (requestId !== undefined) {
+      if (typeof requestId !== "string") throw new HttpError(400, "Identificador de envio inválido.");
+      assertUuid(requestId);
+    }
+    const supabase = createOrderWriter();
+    // Uma nova tentativa após perda de conexão retorna o mesmo pedido.
+    if (requestId) {
+      const previous = await supabase.from("orders").select("id, order_number, created_at, status").eq("request_id", requestId).maybeSingle();
+      if (previous.error) throw previous.error;
+      if (previous.data) return NextResponse.json({ order: previous.data }, { status: 200, headers: noStore });
+    }
     const storeStatus = await getStoreStatus();
-
-    if (storeStatus.status === "closed") {
-      return NextResponse.json(
-        { error: "No momento estamos fechados. Volte em breve 💜" },
-        { status: 409 },
-      );
+    if (storeStatus.status === "closed") throw new HttpError(409, "No momento estamos fechados. Volte em breve 💜", "STORE_CLOSED");
+    const { catalog } = await getPublishedCatalog();
+    const quote = quoteOrderItems(body.items, Date.now(), catalog);
+    const order = { ...validateCheckout(body, quote.subtotal), items: quote.items, subtotal: quote.subtotal, deliveryFee: null, total: quote.total };
+    if (quote.changed || body.subtotal !== quote.subtotal || body.total !== quote.total) {
+      return NextResponse.json({ code: "PRICE_CHANGED", error: quote.message, quote }, { status: 409, headers: noStore });
     }
-
-    const order = normalizeOrderPayload(await request.json());
-    const validationError = validateOrder(order);
-
-    if (validationError) {
-      return NextResponse.json({ error: validationError }, { status: 400 });
-    }
-
-    const supabase = await createClient();
-    const { data, error } = await supabase
-      .from("orders")
-      .insert({
-        customer_name: order.customerName,
-        customer_phone: order.customerPhone,
-        delivery_method: order.deliveryMethod,
-        address: order.deliveryMethod === "delivery" ? order.address : null,
-        neighborhood:
-          order.deliveryMethod === "delivery" ? order.neighborhood || null : null,
-        items: order.items,
-        subtotal: order.subtotal,
-        delivery_fee: null,
-        total: order.total,
-        payment_method: order.paymentMethod,
-        payment_label: order.paymentLabel,
-        change_for:
-          order.paymentMethod === "cash" && order.changeFor ? order.changeFor : null,
-        notes: order.notes || null,
-        status: "Novo",
-        whatsapp_business_phone: WHATSAPP_BUSINESS_PHONE_NUMBER,
-        whatsapp_payload: buildWhatsAppBusinessOrderPayload(order),
-      })
-      .select("id, order_number, created_at, status")
-      .single();
-
+    const { data, error } = await supabase.from("orders").insert({
+      request_id: requestId ?? null,
+      customer_name: order.customerName, customer_phone: order.customerPhone,
+      delivery_method: order.deliveryMethod, address: order.address || null, neighborhood: order.neighborhood || null,
+      items: order.items, subtotal: order.subtotal, delivery_fee: null, total: order.total,
+      payment_method: order.paymentMethod, payment_label: order.paymentLabel, change_for: order.changeFor || null,
+      notes: order.notes || null, status: "Novo", whatsapp_business_phone: WHATSAPP_BUSINESS_PHONE_NUMBER,
+      whatsapp_payload: buildWhatsAppBusinessOrderPayload(order),
+    }).select("id, order_number, created_at, status").single();
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      // Concorrência entre duas tentativas com o mesmo identificador.
+      if (requestId && error.code === "23505") {
+        const previous = await supabase.from("orders").select("id, order_number, created_at, status").eq("request_id", requestId).single();
+        if (previous.data) return NextResponse.json({ order: previous.data }, { headers: noStore });
+      }
+      throw error;
     }
-
-    return NextResponse.json({ order: data }, { status: 201 });
+    return NextResponse.json({ order: data }, { status: 201, headers: noStore });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Não foi possível salvar o pedido.";
-
-    return NextResponse.json({ error: message }, { status: 500 });
+    if (error instanceof OrderPricingError || error instanceof OrderValidationError) return NextResponse.json({ error: error.message }, { status: 400, headers: noStore });
+    return apiError(error, "orders-create", "Não foi possível confirmar seu pedido agora. Tente novamente em instantes.");
   }
 }

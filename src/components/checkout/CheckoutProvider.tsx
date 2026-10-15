@@ -1,15 +1,17 @@
 "use client";
 
-import { createContext, useContext, useState, type ReactNode } from "react";
-import type { CreateOrderPayload } from "@/data/orders";
+import { createContext, useContext, useRef, useState, type ReactNode } from "react";
+import type { CreateOrderPayload, OrderItem } from "@/data/orders";
+import { usePromotionClock } from "@/components/store/PromotionProvider";
 import { useCart } from "@/components/cart/CartProvider";
 import { useStore } from "@/components/store/StoreProvider";
 import {
   initialCheckoutForm,
-  paymentLabels,
   type CheckoutForm,
   type SubmitState,
 } from "@/lib/checkout/form";
+import { validateCheckout } from "@/lib/checkout/validation";
+import { refreshCatalog } from "@/hooks/useCatalog";
 
 type CheckoutContextValue = {
   checkout: CheckoutForm;
@@ -29,11 +31,14 @@ const CheckoutContext = createContext<CheckoutContextValue | null>(null);
 // O payload enviado a /api/orders é o contrato com o banco, o painel admin e a
 // comanda impressa. Não alterar o formato sem revisar esses consumidores.
 export function CheckoutProvider({ children }: { children: ReactNode }) {
-  const { isStoreOpen } = useStore();
-  const { cartItems, totalItems, totalPrice, clearCart } = useCart();
+  const { isStoreOpen, storeUnavailableMessage } = useStore();
+  const { cartItems, totalItems, totalPrice, clearCart, priceNotice, acknowledgePrices, applyQuote } = useCart();
+  const { synchronize } = usePromotionClock();
   const [checkout, setCheckout] = useState<CheckoutForm>(initialCheckoutForm);
   const [submitState, setSubmitState] = useState<SubmitState>("idle");
   const [submitMessage, setSubmitMessage] = useState("");
+  const inFlight = useRef(false);
+  const attempt = useRef<{ body: string; id: string } | null>(null);
 
   const orderTotal = totalPrice;
   const canCheckout =
@@ -44,15 +49,7 @@ export function CheckoutProvider({ children }: { children: ReactNode }) {
 
   function buildOrderPayload(): CreateOrderPayload {
     return {
-      customerName: checkout.customerName,
-      customerPhone: checkout.customerPhone,
-      deliveryMethod: checkout.deliveryMethod,
-      address: checkout.address,
-      neighborhood: checkout.neighborhood,
-      paymentMethod: checkout.paymentMethod,
-      paymentLabel: paymentLabels[checkout.paymentMethod],
-      changeFor: checkout.changeFor,
-      notes: checkout.notes,
+      ...validateCheckout(checkout, totalPrice),
       items: cartItems.map((item) => ({
         id: item.id,
         productId: item.productId,
@@ -61,6 +58,8 @@ export function CheckoutProvider({ children }: { children: ReactNode }) {
         unitPrice: item.unitPrice,
         totalPrice: item.unitPrice * item.quantity,
         customization: item.customization ?? [],
+        selections: item.selections,
+        comboSelections: item.comboSelections,
       })),
       subtotal: totalPrice,
       deliveryFee: null,
@@ -71,32 +70,54 @@ export function CheckoutProvider({ children }: { children: ReactNode }) {
   async function submitOrder() {
     if (!isStoreOpen) {
       setSubmitState("error");
-      setSubmitMessage("No momento estamos fechados. Volte em breve 💜");
+      setSubmitMessage(storeUnavailableMessage);
       return;
     }
 
-    if (!canCheckout || submitState === "submitting") {
+    if (inFlight.current) {
       return;
     }
 
+    if (priceNotice) {
+      setSubmitState("error");
+      setSubmitMessage(`${priceNotice} Confira o total e confirme novamente.`);
+      acknowledgePrices();
+      return;
+    }
+
+    inFlight.current = true;
     setSubmitState("submitting");
     setSubmitMessage("");
 
     try {
+      const payload = buildOrderPayload();
+      const body = JSON.stringify(payload);
+      if (attempt.current?.body !== body) attempt.current = { body, id: crypto.randomUUID() };
+      payload.requestId = attempt.current.id;
       const response = await fetch("/api/orders", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(buildOrderPayload()),
+        body: JSON.stringify(payload),
       });
-      const responseBody = (await response.json()) as { error?: string };
+      const responseBody = (await response.json()) as {
+        error?: string; code?: string;
+        quote?: { items: OrderItem[]; serverTime: number };
+      };
+
+      if (response.status === 409 && responseBody.code === "PRICE_CHANGED" && responseBody.quote) {
+        await refreshCatalog();
+        synchronize(responseBody.quote.serverTime);
+        applyQuote(responseBody.quote.items, responseBody.quote.serverTime);
+      }
 
       if (!response.ok) {
         throw new Error(responseBody.error ?? "Não foi possível enviar o pedido.");
       }
 
       clearCart();
+      attempt.current = null;
       setCheckout(initialCheckoutForm);
       setSubmitState("success");
       setSubmitMessage(
@@ -106,11 +127,9 @@ export function CheckoutProvider({ children }: { children: ReactNode }) {
       const message = error instanceof Error ? error.message : "";
 
       setSubmitState("error");
-      setSubmitMessage(
-        message.includes("Banco de dados não configurado")
-          ? "Não foi possível enviar o pedido porque o banco de dados ainda não foi configurado."
-          : message || "Não foi possível enviar o pedido. Tente novamente.",
-      );
+      setSubmitMessage(message || "Não foi possível enviar o pedido. Tente novamente.");
+    } finally {
+      inFlight.current = false;
     }
   }
 

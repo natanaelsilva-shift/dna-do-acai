@@ -1,4 +1,5 @@
 import type { OrderCustomizationLine } from "@/data/orders";
+import type { SelectionState } from "@/lib/catalog/customization";
 
 export type CartItem = {
   id: string;
@@ -8,6 +9,9 @@ export type CartItem = {
   imagePosition: string;
   quantity: number;
   unitPrice: number;
+  selections?: SelectionState;
+  comboSelections?: SelectionState[];
+  promotionApplied?: boolean;
   customization?: OrderCustomizationLine[];
 };
 

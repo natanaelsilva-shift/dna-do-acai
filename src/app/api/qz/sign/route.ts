@@ -1,17 +1,11 @@
 import { createSign } from "node:crypto";
 import { NextResponse } from "next/server";
-
-function isSameOrigin(request: Request) {
-  const origin = request.headers.get("origin");
-  return !origin || origin === new URL(request.url).origin;
-}
+import { requireAdmin } from "@/lib/supabase/admin";
+import { apiError } from "@/lib/server/http";
 
 export async function POST(request: Request) {
   try {
-    if (!isSameOrigin(request)) {
-      return NextResponse.json({ error: "Origem não autorizada." }, { status: 403 });
-    }
-
+    await requireAdmin(request);
     const privateKey = process.env.QZ_PRIVATE_KEY?.replace(/\\n/g, "\n").trim();
     if (!privateKey) {
       return NextResponse.json({ error: "Chave de assinatura QZ não configurada." }, { status: 503 });
@@ -34,7 +28,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ signature }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Falha ao assinar solicitação QZ.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiError(error, "qz-sign", "Não foi possível autorizar a impressão QZ. Verifique a configuração do serviço.");
   }
 }

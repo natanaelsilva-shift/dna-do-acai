@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { isStoreStatus, type StoreStatus } from "@/data/store-status";
 import { getStoreStatus, updateStoreStatus } from "@/lib/store-status/server";
+import { requireAdmin } from "@/lib/supabase/admin";
+import { apiError } from "@/lib/server/http";
 
 export const dynamic = "force-dynamic";
 
@@ -16,17 +18,13 @@ export async function GET() {
       headers: { "Cache-Control": "no-store, max-age=0" },
     });
   } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Nao foi possivel carregar o status da loja.";
-
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiError(error, "store-status-read", "Não conseguimos confirmar o funcionamento da loja agora. Tente novamente em instantes.");
   }
 }
 
 export async function PATCH(request: Request) {
   try {
+    await requireAdmin(request);
     const body = asRecord(await request.json());
     const status = body.status;
 
@@ -43,11 +41,6 @@ export async function PATCH(request: Request) {
       headers: { "Cache-Control": "no-store, max-age=0" },
     });
   } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Nao foi possivel atualizar o status da loja.";
-
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiError(error, "store-status-write", "Não foi possível atualizar o status da loja. Tente novamente.");
   }
 }

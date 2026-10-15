@@ -1,68 +1,32 @@
 import { NextResponse } from "next/server";
-import { isOrderStatus, type OrderStatus } from "@/data/orders";
-import { createClient } from "@/lib/supabase/server";
+import { isOrderStatus } from "@/data/orders";
+import { requireAdmin } from "@/lib/supabase/admin";
+import { apiError, assertUuid, HttpError, noStore } from "@/lib/server/http";
 
-type RouteContext = {
-  params: Promise<{
-    id: string;
-  }>;
-};
-
-type OrderUpdateData = {
-  updated_at: string;
-  status?: string;
-  delivery_fee?: number;
-  total?: number;
-};
-
-export async function PATCH(request: Request, context: RouteContext) {
+export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
+    const { supabase } = await requireAdmin(request);
     const { id } = await context.params;
-    const body = (await request.json()) as { status?: unknown; delivery_fee?: unknown };
-    const statusValue = typeof body.status === "string" ? body.status : undefined;
-    const status: OrderStatus | undefined =
-      statusValue && isOrderStatus(statusValue) ? statusValue : undefined;
-    const deliveryFee = typeof body.delivery_fee === "number" ? body.delivery_fee : undefined;
-
-    if (statusValue && !status) {
-      return NextResponse.json({ error: "Status inválido." }, { status: 400 });
+    assertUuid(id);
+    const body = await request.json();
+    if (!body || typeof body !== "object" || Array.isArray(body)) throw new HttpError(400, "Dados inválidos.");
+    if (body.status !== undefined && (typeof body.status !== "string" || !isOrderStatus(body.status))) throw new HttpError(400, "Status inválido.");
+    if (body.delivery_fee !== undefined && (!Number.isSafeInteger(body.delivery_fee) || body.delivery_fee < 0 || body.delivery_fee > 100_000)) throw new HttpError(400, "Taxa de entrega inválida.");
+    if (body.status === undefined && body.delivery_fee === undefined) throw new HttpError(400, "Informe o status ou a taxa de entrega.");
+    const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (body.status !== undefined) update.status = body.status;
+    if (body.delivery_fee !== undefined) {
+      const previous = await supabase.from("orders").select("subtotal").eq("id", id).maybeSingle();
+      if (previous.error) throw previous.error;
+      if (!previous.data) throw new HttpError(404, "Pedido não encontrado.");
+      update.delivery_fee = body.delivery_fee;
+      update.total = previous.data.subtotal + body.delivery_fee;
     }
-
-    if (deliveryFee !== undefined && (deliveryFee < 0 || !Number.isInteger(deliveryFee))) {
-      return NextResponse.json({ error: "Taxa de entrega inválida." }, { status: 400 });
-    }
-
-    const updateData: OrderUpdateData = { updated_at: new Date().toISOString() };
-    if (status) updateData.status = status;
-    if (deliveryFee !== undefined) {
-      updateData.delivery_fee = deliveryFee;
-    }
-
-    const supabase = await createClient();
-
-    if (deliveryFee !== undefined) {
-      const order = await supabase.from("orders").select("subtotal").eq("id", id).single();
-      if (order.data) {
-        updateData.total = order.data.subtotal + deliveryFee;
-      }
-    }
-
-    const { data, error } = await supabase
-      .from("orders")
-      .update(updateData)
-      .eq("id", id)
-      .select("*")
-      .single();
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    return NextResponse.json({ order: data });
+    const { data, error } = await supabase.from("orders").update(update).eq("id", id).select("*").maybeSingle();
+    if (error) throw error;
+    if (!data) throw new HttpError(404, "Pedido não encontrado.");
+    return NextResponse.json({ order: data }, { headers: noStore });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Não foi possível atualizar o pedido.";
-
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiError(error, "orders-update", "Não foi possível atualizar o pedido. Tente novamente.");
   }
 }

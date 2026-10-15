@@ -4,6 +4,7 @@ import { createContext, useContext, useMemo, useState, type ReactNode } from "re
 import { initialCatalog, type ComboCup, type ComplementGroup, type Product } from "@/data/menu";
 import { useCart } from "@/components/cart/CartProvider";
 import { useStore } from "@/components/store/StoreProvider";
+import { usePromotionClock } from "@/components/store/PromotionProvider";
 import {
   buildComboCartLine,
   buildCustomizedCupCartLine,
@@ -49,9 +50,11 @@ type CustomizerContextValue = {
 const CustomizerContext = createContext<CustomizerContextValue | null>(null);
 
 export function CustomizerProvider({ children }: { children: ReactNode }) {
-  const { complementGroups } = useStore();
+  const { complementGroups, products } = useStore();
+  const { now, currentTime } = usePromotionClock();
   const { addCartLine } = useCart();
-  const [customizingProduct, setCustomizingProduct] = useState<Product | null>(null);
+  const [selectedProduct, setCustomizingProduct] = useState<Product | null>(null);
+  const customizingProduct = products.find((product) => product.id === selectedProduct?.id) ?? null;
   const [selections, setSelections] = useState<SelectionState>(() =>
     getDefaultSelections(initialCatalog.complementGroups),
   );
@@ -93,8 +96,9 @@ export function CustomizerProvider({ children }: { children: ReactNode }) {
           customizingProduct,
           activeComboSelections,
           complementGroups,
+          now,
         )
-      : calculateCustomizedPrice(customizingProduct, selections, activeComplementGroups)
+      : calculateCustomizedPrice(customizingProduct, selections, activeComplementGroups, now)
     : 0;
 
   const isCustomizationValid = isSelectionValid(selections, activeComplementGroups);
@@ -121,7 +125,7 @@ export function CustomizerProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    addCartLine(buildSimpleCartLine(product));
+    addCartLine(buildSimpleCartLine(product, currentTime()));
   }
 
   function confirmCustomization() {
@@ -150,7 +154,7 @@ export function CustomizerProvider({ children }: { children: ReactNode }) {
       }
 
       addCartLine(
-        buildComboCartLine(customizingProduct, nextComboSelections, complementGroups),
+        buildComboCartLine(customizingProduct, nextComboSelections, complementGroups, currentTime()),
       );
 
       setCustomizingProduct(null);
@@ -161,7 +165,7 @@ export function CustomizerProvider({ children }: { children: ReactNode }) {
     }
 
     addCartLine(
-      buildCustomizedCupCartLine(customizingProduct, selections, activeComplementGroups),
+      buildCustomizedCupCartLine(customizingProduct, selections, activeComplementGroups, currentTime()),
     );
 
     setCustomizingProduct(null);
