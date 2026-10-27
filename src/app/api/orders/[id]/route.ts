@@ -1,7 +1,8 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { isOrderStatus } from "@/data/orders";
 import { requireAdmin } from "@/lib/supabase/admin";
 import { apiError, assertUuid, HttpError, noStore } from "@/lib/server/http";
+import { notifyAtendeiaStatus } from "@/lib/integrations/atendeia/server";
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -25,6 +26,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     const { data, error } = await supabase.from("orders").update(update).eq("id", id).select("*").maybeSingle();
     if (error) throw error;
     if (!data) throw new HttpError(404, "Pedido não encontrado.");
+    // Pedido do WhatsApp: avisa o AtendeIA depois da resposta (não atrasa nem quebra o painel).
+    if (body.status !== undefined) after(() => notifyAtendeiaStatus(data));
     return NextResponse.json({ order: data }, { headers: noStore });
   } catch (error) {
     return apiError(error, "orders-update", "Não foi possível atualizar o pedido. Tente novamente.");

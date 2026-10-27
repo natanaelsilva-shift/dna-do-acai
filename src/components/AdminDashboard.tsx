@@ -31,6 +31,7 @@ import {
   isSupabaseConfigured,
 } from "@/lib/supabase/client";
 import {
+  isAtendeiaOrder,
   ORDER_STATUSES,
   WHATSAPP_BUSINESS_PHONE_NUMBER,
   type OrderRecord,
@@ -1545,7 +1546,7 @@ export function AdminDashboard({
               Novo pedido recebido!
             </p>
             <p className="mt-2 text-sm font-semibold text-[#103d2c]">
-              {formatOrderNumber(newestOrder.order_number)} • {newestOrder.customer_name}
+              {formatOrderNumber(newestOrder.order_number)} • {newestOrder.customer_name}{isAtendeiaOrder(newestOrder.whatsapp_payload) ? " • WhatsApp" : ""}
             </p>
             <p className="mt-1 text-sm leading-6 text-[#526354]">
               {formatDateTime(newestOrder.created_at)}
@@ -2022,6 +2023,7 @@ function OrdersPanel({
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#4b164c]">Pedido {formatOrderNumber(order.order_number)}</p>
                       {order.status === "Novo" ? <span className="rounded-full bg-[#d7a948] px-2 py-1 text-[10px] font-black text-[#103d2c]">NOVO</span> : null}
+                      {isAtendeiaOrder(order.whatsapp_payload) ? <span className="rounded-full bg-[#e9f9ef] px-2 py-1 text-[10px] font-bold text-[#0f6b3a]">WHATSAPP · ATENDIMENTO AUTOMÁTICO</span> : null}
                       {order.print_status === "pending" ? <span className="rounded-full bg-[#fff8df] px-2 py-1 text-[10px] font-bold text-[#8a6a26]">IMPRESSÃO PENDENTE</span> : null}
                       {order.print_status === "printing" ? <span className="rounded-full bg-[#eef5ff] px-2 py-1 text-[10px] font-bold text-[#195a9a]">IMPRIMINDO</span> : null}
                       {order.print_status === "printed" || (order.printed_at && order.print_status !== "failed") ? <span className="rounded-full bg-[#eaf8ef] px-2 py-1 text-[10px] font-bold text-[#14743f]">IMPRESSO</span> : null}

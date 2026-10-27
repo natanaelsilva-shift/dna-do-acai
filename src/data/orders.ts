@@ -82,3 +82,11 @@ export type OrderRecord = {
 export function isOrderStatus(value: string): value is OrderStatus {
   return ORDER_STATUSES.includes(value as OrderStatus);
 }
+
+// Pedidos recebidos pelo atendimento automático do WhatsApp (AtendeIA).
+export const ATENDEIA_ORDER_ORIGIN = "atendeia";
+
+export function isAtendeiaOrder(payload: unknown) {
+  return Boolean(payload && typeof payload === "object" &&
+    (payload as { origin?: { system?: unknown } }).origin?.system === ATENDEIA_ORDER_ORIGIN);
+}
