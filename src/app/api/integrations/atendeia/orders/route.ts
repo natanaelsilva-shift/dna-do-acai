@@ -39,8 +39,12 @@ export async function POST(request: Request) {
     const delivery = (body.delivery ?? {}) as Record<string, unknown>;
     const payment = (body.payment ?? {}) as Record<string, unknown>;
     const source = (body.source ?? {}) as Record<string, unknown>;
+    // Pendência de pagamento visível no painel e na comanda (o pedido nunca entra como pago).
+    const pendencia = payment.method === "pix" ? "Pix: aguardando confirmação do pagamento pela loja."
+      : payment.method === "card" ? "Cartão: responsável deve dar continuidade ao pagamento com o cliente."
+      : "Pagamento na entrega/retirada.";
     const notes = [
-      "Pedido feito pelo WhatsApp (AtendeIA). Pagamento aguardando confirmação da loja.",
+      `Pedido feito pelo WhatsApp (AtendeIA). ${pendencia}`,
       text(body.notes, 800) && `Observações do cliente: ${text(body.notes, 800)}`,
     ].filter(Boolean).join("\n");
     const checkout = validateCheckout({
